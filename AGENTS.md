@@ -41,17 +41,24 @@ Internal deps use `workspace:*` (`engine` → `schema`, `cli` → both).
 
 ## Commands
 
+Tasks are run with **[`just`](https://github.com/casey/just)** — the canonical entrypoint (`justfile` at the repo root). Run `just` with no args to list every recipe (grouped, with one-line docs). Recipes are thin wrappers over the pnpm scripts, so `pnpm <script>` still works directly.
+
 ```bash
-pnpm install
-pnpm test            # vitest (logic + replay determinism), no browser
-pnpm typecheck       # tsc --noEmit, strict
-pnpm cli validate examples/cafe.story.json
-pnpm cli simulate examples/cafe.story.json --actions examples/cafe.actions.json --seed 42
-pnpm changeset       # author a changeset (required with code changes)
-pnpm version         # consume changesets: bump versions + CHANGELOGs + refresh lockfile
+just              # list all recipes (grouped: setup / dev / quality / release / meta)
+just setup        # install deps + Playwright Chromium (first-time bootstrap)
+just demo         # play the example story headlessly via the CLI
+just dev          # web player dev server (Vite)
+just check        # fast gate: typecheck + unit tests + web build (no browser)
+just ci           # full gate incl. Playwright e2e
+just cli validate examples/cafe.story.json   # the agent harness; args forwarded
+just test [args]  # Vitest (units + replay determinism); just e2e for Playwright
+just changeset    # author a changeset (required with code changes)
+just version      # consume changesets: bump versions + CHANGELOGs + refresh lockfile
 ```
 
-Toolchain: Node ≥20 (CI uses 22, see `.nvmrc`), pnpm 10.32, Zod 4, Vitest 2, tsx. Dev runs TS directly via tsx/vitest — there is no build step yet (added in P1 when a renderer needs bundling).
+When adding a new common task, add a `just` recipe for it (with a `# doc comment` and a `[group(...)]`); keep `justfile` formatted via `just fmt` (CI-checkable with `just fmt-check`). If you don't have `just`, run the underlying `pnpm` script the recipe wraps.
+
+Toolchain: Node ≥20 (CI uses 22, see `.nvmrc`), pnpm 10.32, Zod 4, Vitest 2, tsx, Vite 5 + vite-plugin-pwa, PixiJS 8, Dexie, Playwright. `just build` / `pnpm build:web` bundles the web player; the engine/schema/cli still run as TS directly via tsx/vitest (no build step).
 
 ## The agent harness (this is the product)
 
