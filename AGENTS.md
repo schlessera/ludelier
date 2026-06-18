@@ -6,6 +6,8 @@ Canonical context + conventions for any AI agent (or human) working in this repo
 
 **Ludelier** is a TypeScript, web-first engine + editor + runtime for **AI-augmented game development**. Initial scope: interactive visual novels (Ren'Py-style); open to other game types later. The whole point is that AI agents can reliably **grow and maintain** a game with no manual steps where avoidable.
 
+The delivered **app is an agent-native editor**: a game-engine-style editing environment with a **built-in agentic chat**. The agent has dedicated tasks to **understand the game world** (inspect the story graph, characters, assets, variables; validate; simulate) and **manipulate it** (validated, structured edits that keep the Story always Zod-valid). Anything a human can do in the editor UI, the agent can do through the same tasks — see "The app: agent-native editor".
+
 Business model: open-core **MIT** engine (bring-your-own-key AI, self-hostable) + a planned hosted **cloud** tier (paid usage + hosting). Cloud-only code will live under `/ee` (commercial license).
 
 > Name note: "Ludelier" is the chosen name (ludo "play" + atelier "workshop"). The working title was **gaimez** — the directory may still be `gaimez` until renamed to `ludelier`.
@@ -32,6 +34,8 @@ packages/
             seeded RNG (rng.ts), stable-key hash (hash.ts), headless Simulation
             runner + JSONL trace record/replay (simulation.ts). No engine/DOM deps.
   cli/      @ludelier/cli — the agent harness. `validate | simulate | replay`.
+  authoring/ @ludelier/authoring — P2 AI authoring: `LLMProvider` seam (OpenAI +
+            OpenRouter) + `generateStory()` self-correction loop. Grows into the agent world API.
   renderer-pixi/ @ludelier/renderer-pixi — display-only PixiJS v8 renderer
             (cover-fit background, character sprites, dialog/choices, crossfades). No game logic.
   runtime-web/   @ludelier/runtime-web — Vite + vite-plugin-pwa browser player.
@@ -74,6 +78,17 @@ The engine exposes a programmatic surface so an agent can grow/verify a game wit
 
 Invest in this surface, not in renderer cleverness.
 
+## The app: agent-native editor
+
+The delivered app is a **game-engine-style editor with a built-in agentic chat** — a human and an agent co-build the game in one environment. It builds directly on the headless harness above:
+
+- **Understand tasks (read-only, deterministic):** inspect the Story graph (nodes, edges, reachability, dead ends), list characters / assets / variables, `validateStory()`, and run/inspect a `Simulation` (state, transcript, hash).
+- **Manipulate tasks (validated mutations):** structured edits to the Story — create/update/delete a node, append/insert/remove a statement, set meta, add a character, register an asset, rewire a goto — each re-validated so the Story is **never left invalid**.
+- These tasks are exposed both as a programmatic **world API** and as **LLM tools** the agentic chat calls (provider tool-calling). `generateStory()` is the coarse "scaffold a whole game" task; finer tasks do incremental edits.
+- **Agent-native parity:** every action a human can take in the editor UI, the agent can take through the same tasks — no human-only escape hatches.
+
+P2 builds this world API on `@ludelier/authoring`; the editor UI (the runtime-web player evolving toward an editor) wires it to the chat panel + inspectors.
+
 ## Agent skills
 
 Reusable, checked-in instructions for agents working in this repo live under `.agents/skills/`. Each skill is a folder with a `SKILL.md` (YAML frontmatter `name` + `description`, then the procedure) plus any helper scripts.
@@ -90,7 +105,7 @@ Reusable, checked-in instructions for agents working in this repo live under `.a
 
 - **P0 — DONE:** headless deterministic core + Zod DSL + CLI harness + Vitest. (current)
 - **P1:** PixiJS v8 renderer + Vite + vite-plugin-pwa shell + Howler audio + Dexie saves + Playwright visual tests (`--use-gl=swiftshader`, `data-ready` flag). Make `cafe.story.json` play in a browser.
-- **P2:** AI authoring — an LLM adapter generates Zod-valid content + self-correction loop, behind the same multi-provider shape as assets (OpenAI + OpenRouter pluggable).
+- **P2:** AI authoring + the **agent world API** — a multi-provider LLM adapter (OpenAI + OpenRouter) with a self-correction loop generates Zod-valid content, plus understand/manipulate tasks over the Story exposed as agent tools for the editor's agentic chat.
 - **P3:** AI asset generation behind a **multi-provider `AssetProvider`** (OpenAI + OpenRouter from v1, BYOK per provider, capability-routed so e.g. a transparent sprite picks a provider that supports it; registry for future fal.ai/ElevenLabs) + provenance pipeline (provider/model/seed sidecars, hash-cache).
 - **P4:** cloud seam — self-host BYOK config ↔ metered cloud per-tenant keys (per provider; the per-tenant provider key is the metering boundary). AI-gateway tool choice is deferred (not locked).
 

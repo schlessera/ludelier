@@ -10,6 +10,7 @@ A living snapshot of where the project stands: decisions, what's built, what's o
 
 **Ludelier** — a TypeScript, web-first **engine + editor + runtime for AI-augmented game development**. Initial scope: interactive visual novels (Ren'Py-style); open to other genres later. The defining goal: **AI agents can reliably grow and maintain a game with no manual steps where avoidable**.
 
+- The **app is an agent-native editor**: a game-engine-style environment with a **built-in agentic chat**. The agent has dedicated **understand** tasks (inspect/validate/simulate the game world) and **manipulate** tasks (validated, structured edits that keep the Story always-valid), with agent-native parity to the editor UI. (See AGENTS.md → "The app: agent-native editor".)
 - Name: _ludo_ ("play") + _atelier_ ("workshop") = "a workshop for play-crafting". Working title was `gaimez`.
 - Business model: open-core **MIT** engine (bring-your-own-key AI, self-hostable) + a planned hosted **cloud** tier (paid usage + hosting). Cloud-only code will live under `/ee` (commercial).
 - Players run finished games as installable **PWAs** — no hardware/driver/platform requirements.
@@ -94,6 +95,10 @@ just changeset / just version
 - **CI** (`ci.yml`): typecheck + unit + build + e2e.
 - `cafe.story.json` plays end-to-end in a real browser **with a café background + character sprite** (AI-generated via the OpenAI Images API; see the `image-generation` agent skill).
 
+### P2 — AI authoring + agent world API 🔨 (in progress)
+- **`@ludelier/authoring`** (first slice) — `LLMProvider` seam mirroring `AssetProvider` (OpenAI + OpenRouter over a shared OpenAI-compatible core; BYOK-per-provider registry) + `generateStory()`: a provider-agnostic **self-correction loop** that constrains output with `storyJsonSchema()`, validates with `validateStory()`, and feeds issues back until valid or attempts exhausted. Hermetic mock-provider / fake-fetch tests.
+- **Next:** the **world API** — _understand_ (graph/inspect/validate/simulate) + _manipulate_ (validated Story mutations) tasks exposed as LLM tools; then the **editor agentic-chat UI** (runtime-web player → editor). Plus a live smoke test + a CLI `author` command.
+
 ### Tooling ✅
 - changesets (independent, version-PR only); `release.yml` + `changeset-check.yml`.
 - `justfile` task runner; `AGENTS.md` + `CLAUDE.md`.
@@ -104,7 +109,7 @@ just changeset / just version
 ## 7. Verification status (as of last run)
 
 - `pnpm typecheck` — clean (tsc strict).
-- `pnpm test` — 29/29 unit tests pass (engine `stage.test.ts` + schema asset/scene/show/hide cases added).
+- `pnpm test` — 38/38 unit tests pass (+ `@ludelier/authoring`: self-correction loop + OpenAI/OpenRouter provider tests).
 - `pnpm build:web` — OK (PixiJS bundle + PWA SW, 19 precache entries incl. webp art, icons in manifest).
 - `just e2e` — 3/3 pass, ~4–6s (opening frame now renders the café bg + character sprite).
 
@@ -116,7 +121,7 @@ just changeset / just version
 |---|---|---|
 | **P0** headless core | ✅ done | engine + schema + CLI harness + Vitest |
 | **P1** render + play | ✅ done | PixiJS renderer, Vite/PWA shell, Dexie saves, Playwright, **backgrounds + character sprites** (scene/show/hide + crossfades) |
-| **P2** AI authoring | ⬜ next | OpenRouter LLM adapter → Zod-valid Story content + self-correction loop |
+| **P2** AI authoring + world API | 🔨 in progress | multi-provider LLM adapter (OpenAI + OpenRouter) + self-correction loop **[done]**; understand/manipulate world API as agent tools; editor agentic chat |
 | **P3** AI assets | ⬜ | image/TTS gen behind a **multi-provider `AssetProvider`** (OpenAI + OpenRouter v1, BYOK per provider, capability-routed), provenance pipeline, Howler audio |
 | **P4** cloud seam | ⬜ | self-host BYOK config ↔ metered cloud per-tenant keys (gateway tool not yet chosen) |
 
