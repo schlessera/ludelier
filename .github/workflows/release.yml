@@ -1,0 +1,61 @@
+# Release — changesets "Version Packages" PR flow.
+#
+# CURRENT MODE: version-PR only (no npm publish).
+#   On every push to main with pending .changeset/*.md files, changesets/action
+#   opens/updates a "Version Packages" PR that runs `pnpm run version`
+#   (changeset version + lockfile refresh). Merging that PR bumps versions and
+#   writes CHANGELOGs. Nothing is published to npm.
+#
+# TO ENABLE PUBLISHING LATER:
+#   1. Flip the packages public: remove `"private": true` from each publishable
+#      package.json and add `"publishConfig": { "access": "public" }`.
+#   2. Set `access` to "public" in .changeset/config.json.
+#   3. Add a build step before publish (packages must ship compiled JS + d.ts).
+#   4. Uncomment the `publish:` input below + the `id-token` permission, and add
+#      npm auth — either OIDC trusted publishing (preferred) or an NPM_TOKEN
+#      automation-token secret passed via env.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release:
+    name: Version Packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the version-bump commit
+      pull-requests: write # open / update the "Version Packages" PR
+      # id-token: write   # <- uncomment for npm OIDC trusted publishing
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so changesets can diff against baseBranch
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4 # version read from root packageManager field
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create Version Packages PR
+        uses: changesets/action@v1
+        with:
+          version: pnpm run version # changeset version + `pnpm install --no-frozen-lockfile`
+          commit: "chore: version packages"
+          title: "chore: version packages"
+          # publish: pnpm run release   # <- uncomment to publish on merge (see header)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # NPM_TOKEN: ${{ secrets.NPM_TOKEN }}   # <- only needed for the classic publish path

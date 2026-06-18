@@ -1,0 +1,29 @@
+# Fail PRs that change code but include no changeset.
+# Keeps the changelog honest: every user-visible change ships with a bump note.
+# To intentionally skip (docs-only, chore), add an empty changeset: `pnpm changeset --empty`.
+name: Changeset Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: Require changeset
+    runs-on: ubuntu-latest
+    # Don't nag bots or the auto-generated "Version Packages" PR (it deletes changesets).
+    if: github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'changeset-release/')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for a changeset file
+        run: |
+          COUNT=$(git diff --name-only --diff-filter=A "origin/${{ github.base_ref }}...HEAD" \
+            | grep -E '^\.changeset/.+\.md$' | grep -v '^\.changeset/README\.md$' | wc -l | tr -d ' ')
+          if [ "$COUNT" -eq 0 ]; then
+            echo "::error::No changeset found. Run 'pnpm changeset' and commit the file (or 'pnpm changeset --empty' for a no-release change)."
+            exit 1
+          fi
+          echo "Found $COUNT changeset file(s)."
