@@ -49,3 +49,26 @@ test("renders the opening frame", async ({ page }) => {
   await page.waitForTimeout(200);
   await expect(page).toHaveScreenshot("opening.png", { maxDiffPixelRatio: 0.03 });
 });
+
+test("advances and chooses via real canvas clicks", async ({ page }) => {
+  await page.goto("/?new");
+  await ready(page);
+
+  const stage = page.locator('canvas[data-testid="stage"]');
+  const box = await stage.boundingBox();
+  if (!box) throw new Error("canvas not found");
+  // Map internal 1280x720 scene coords to the (possibly scaled) displayed canvas.
+  const clickAt = (ix: number, iy: number) =>
+    stage.click({ position: { x: (ix / 1280) * box.width, y: (iy / 720) * box.height } });
+
+  // A `say` is dismissed by clicking anywhere (full-screen hit layer).
+  expect((await handle(page)).pending.kind).toBe("say");
+  await clickAt(640, 360);
+  await expect.poll(async () => (await handle(page)).pending.kind).toBe("choice");
+
+  // First choice button is centered; for 2 options its center is ~(640, 320).
+  await clickAt(640, 320);
+  await expect
+    .poll(async () => (await handle(page)).pending)
+    .toMatchObject({ kind: "say", who: "mc" });
+});
