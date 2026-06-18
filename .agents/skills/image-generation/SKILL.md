@@ -113,3 +113,19 @@ identify -format "%f %wx%h %m alpha=%A %b\n" bg.webp her.webp
 - **Determinism:** committed assets are fixed inputs, so visual baselines (`*-chromium-linux.png`)
   are byte-stable. Regenerating art changes the bytes → you must refresh baselines (`just e2e-update`).
   Don't regenerate casually.
+
+## OpenRouter (P3) — transparency caveat
+
+This skill uses OpenAI's **direct** API. P3 locks assets to **OpenRouter BYOK**, and the transparency
+path does **not** carry over 1:1 (verified 2026-06; OpenRouter's catalog evolves — re-check):
+
+- OpenRouter exposes OpenAI image gen only as the **GPT-5 Image series** (`openai/gpt-5-image`,
+  `…-mini`, `gpt-5.4-image-2`); **`gpt-image-1.5` is not addressable by name.**
+- OpenRouter routes image gen through `/api/v1/chat/completions` + `modalities: ["image"]`, not
+  OpenAI's `/images/generations` — so there is **no `background:"transparent"`**. Transparency is a
+  separate `background_mode` (`original`/`transparent`/`solid`) param, currently **only on Sourceful
+  V2.5** (`sourceful/riverflow-v2.5-fast` / `-pro`). No GPT-5/OpenAI image model documents it.
+- So for transparent sprites via OpenRouter: use a **Sourceful riverflow-v2.5** model, OR generate
+  opaque on a flat background and **key locally** (ImageMagick chroma + `-trim`), OR keep a
+  direct-OpenAI sprite path. The locked `AssetProvider` interface is the seam — expose a transparency
+  capability the OpenRouter provider maps to `background_mode` or to a keying fallback.

@@ -138,6 +138,7 @@ just changeset / just version
 
 - **P4 AI gateway tool** — NOT chosen. LiteLLM is a research candidate but explicitly deferred. Concept is locked (self-host BYOK config ↔ cloud metered per-tenant keys → usage billing; metering boundary = per-tenant key; monetize workflow + hosting, never the copyable artifact). Decide later.
 - **Asset providers beyond OpenRouter** — fal.ai (FLUX/LoRA) + ElevenLabs (voice/SFX) are the planned adapters; timing TBD (likely P3).
+- **Transparent sprites via OpenRouter (P3)** — the OpenAI-direct trick we use now (`gpt-image-1.5` + `background:"transparent"`) does **not** carry over: OpenRouter exposes OpenAI only as the GPT-5 Image series (no `gpt-image-1.5`), routes via `/chat/completions` + `modalities` (no `background:"transparent"`), and its `background_mode:transparent` is Sourceful-V2.5-only. Options at P3: a Sourceful riverflow model, local chroma-keying of opaque output, or a direct-OpenAI sprite path — reconcile behind `AssetProvider`. (Researched 2026-06-18; see the `image-generation` skill.)
 - **Author-facing DSL** — a simpler Ren'Py-like surface that compiles down to the canonical JSON; design later.
 - **Character/style consistency** strategy for AI art (per-character LoRA vs. model-native multi-subject like Nano Banana Pro) — revisit at P3.
 
