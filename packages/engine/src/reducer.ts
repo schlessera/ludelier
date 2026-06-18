@@ -1,5 +1,5 @@
 import type { Story, Condition, VarValue } from "@ludelier/schema";
-import type { Action, GameState } from "./state";
+import type { Action, GameState, StageSprite } from "./state";
 import { rollInt } from "./rng";
 
 const MAX_STEPS = 100_000;
@@ -36,6 +36,7 @@ function resolve(story: Story, state: GameState): GameState {
   let index = state.cursor.index;
   let vars = state.vars;
   let rng = state.rng;
+  let stage = state.stage;
   let transcript = state.transcript;
   let steps = 0;
 
@@ -45,7 +46,7 @@ function resolve(story: Story, state: GameState): GameState {
     }
     const body = nodeBody(story, node);
     if (index >= body.length) {
-      return { cursor: { node, index }, vars, rng, transcript, pending: { kind: "end" }, done: true };
+      return { cursor: { node, index }, vars, rng, stage, transcript, pending: { kind: "end" }, done: true };
     }
     const stmt = body[index]!;
     switch (stmt.op) {
@@ -54,6 +55,7 @@ function resolve(story: Story, state: GameState): GameState {
           cursor: { node, index },
           vars,
           rng,
+          stage,
           transcript: [...transcript, { who: stmt.who, text: stmt.text }],
           pending: { kind: "say", who: stmt.who, text: stmt.text },
           done: false,
@@ -79,11 +81,33 @@ function resolve(story: Story, state: GameState): GameState {
         node = stmt.goto;
         index = 0;
         break;
+      case "scene":
+        // A new scene replaces the background and clears all sprites.
+        stage = { bg: stmt.bg ?? null, sprites: [] };
+        index++;
+        break;
+      case "show": {
+        // Replace any existing sprite in this slot, then keep the list sorted by
+        // id so the stage hashes deterministically regardless of show order.
+        const sprite: StageSprite = { id: stmt.sprite, asset: stmt.asset, at: stmt.at };
+        const sprites = stage.sprites
+          .filter((s) => s.id !== stmt.sprite)
+          .concat(sprite)
+          .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        stage = { ...stage, sprites };
+        index++;
+        break;
+      }
+      case "hide":
+        stage = { ...stage, sprites: stage.sprites.filter((s) => s.id !== stmt.sprite) };
+        index++;
+        break;
       case "choice":
         return {
           cursor: { node, index },
           vars,
           rng,
+          stage,
           transcript,
           pending: {
             kind: "choice",
@@ -97,7 +121,7 @@ function resolve(story: Story, state: GameState): GameState {
           done: false,
         };
       case "end":
-        return { cursor: { node, index }, vars, rng, transcript, pending: { kind: "end" }, done: true };
+        return { cursor: { node, index }, vars, rng, stage, transcript, pending: { kind: "end" }, done: true };
     }
   }
 }
@@ -109,6 +133,7 @@ export function initialState(story: Story, seed?: number): GameState {
     cursor: { node: story.meta.start, index: 0 },
     vars: {},
     rng: seeded,
+    stage: { bg: null, sprites: [] },
     pending: { kind: "end" },
     done: false,
     transcript: [],

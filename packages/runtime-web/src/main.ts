@@ -23,7 +23,15 @@ function doChoose(index: number): void {
   update();
 }
 
-const renderer = new PixiRenderer({ onAdvance: doAdvance, onChoose: doChoose });
+const renderer = new PixiRenderer({
+  onAdvance: doAdvance,
+  onChoose: doChoose,
+  // Mirror transition state into the DOM so tests can wait for a settled frame.
+  onAnimating: (active) => {
+    if (active) document.documentElement.dataset.anim = "1";
+    else delete document.documentElement.dataset.anim;
+  },
+});
 
 function update(): void {
   renderer.render(sim.state);
@@ -32,6 +40,7 @@ function update(): void {
   (window as unknown as { __ludelier: unknown }).__ludelier = {
     pending: sim.state.pending,
     vars: sim.state.vars,
+    stage: sim.state.stage,
     done: sim.state.done,
     hash: sim.hash(),
     transcript: sim.transcript(),
@@ -45,6 +54,8 @@ async function main(): Promise<void> {
   if (!root) throw new Error("#app not found");
 
   await renderer.mount(root);
+  // Preload every declared asset up front so render() stays synchronous.
+  await renderer.preload(story.assets);
 
   // ?new starts fresh; otherwise resume the local save (local-first).
   const fresh = new URLSearchParams(location.search).has("new");

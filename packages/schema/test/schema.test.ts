@@ -61,3 +61,68 @@ describe("validateStory", () => {
     expect(schema.properties).toBeDefined();
   });
 });
+
+describe("assets + scene/show/hide", () => {
+  const base = {
+    meta: { id: "x", title: "x", start: "a", seed: 1 },
+    assets: [{ id: "bg", src: "/bg.png" }, { id: "her", src: "/her.png" }],
+  };
+
+  it("accepts scene/show/hide referencing declared assets", () => {
+    const res = validateStory({
+      ...base,
+      nodes: [
+        {
+          id: "a",
+          body: [
+            { op: "scene", bg: "bg" },
+            { op: "show", sprite: "her", asset: "her", at: "left" },
+            { op: "hide", sprite: "her" },
+            { op: "end" },
+          ],
+        },
+      ],
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it("defaults a show position to center", () => {
+    const res = validateStory({
+      ...base,
+      nodes: [{ id: "a", body: [{ op: "show", sprite: "her", asset: "her" }, { op: "end" }] }],
+    });
+    expect(res.success).toBe(true);
+    if (res.success) {
+      const show = res.data.nodes[0]!.body[0]!;
+      expect(show.op === "show" && show.at).toBe("center");
+    }
+  });
+
+  it("rejects a scene bg referencing an unknown asset", () => {
+    const res = validateStory({
+      ...base,
+      nodes: [{ id: "a", body: [{ op: "scene", bg: "missing" }, { op: "end" }] }],
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) expect(res.issues.some((i) => i.message.includes("missing"))).toBe(true);
+  });
+
+  it("rejects a show referencing an unknown asset", () => {
+    const res = validateStory({
+      ...base,
+      nodes: [{ id: "a", body: [{ op: "show", sprite: "her", asset: "nope" }, { op: "end" }] }],
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) expect(res.issues.some((i) => i.message.includes("nope"))).toBe(true);
+  });
+
+  it("rejects duplicate asset ids", () => {
+    const res = validateStory({
+      meta: { id: "x", title: "x", start: "a", seed: 1 },
+      assets: [{ id: "bg", src: "/a.png" }, { id: "bg", src: "/b.png" }],
+      nodes: [{ id: "a", body: [{ op: "end" }] }],
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) expect(res.issues.some((i) => i.message.includes("duplicate asset"))).toBe(true);
+  });
+});

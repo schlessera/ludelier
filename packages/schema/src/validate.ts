@@ -28,6 +28,14 @@ function crossRefIssues(story: Story): Issue[] {
     });
   }
 
+  const assetIds = new Set<string>();
+  for (const asset of story.assets) {
+    if (assetIds.has(asset.id)) {
+      issues.push({ path: "assets", message: `duplicate asset id: "${asset.id}"` });
+    }
+    assetIds.add(asset.id);
+  }
+
   for (const node of story.nodes) {
     node.body.forEach((stmt, i) => {
       const at = `nodes.${node.id}.body[${i}]`;
@@ -43,6 +51,12 @@ function crossRefIssues(story: Story): Issue[] {
             });
           }
         });
+      }
+      if (stmt.op === "scene" && stmt.bg !== undefined && !assetIds.has(stmt.bg)) {
+        issues.push({ path: at, message: `scene bg references unknown asset "${stmt.bg}"` });
+      }
+      if (stmt.op === "show" && !assetIds.has(stmt.asset)) {
+        issues.push({ path: at, message: `show references unknown asset "${stmt.asset}"` });
       }
     });
   }

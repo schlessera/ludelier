@@ -4,10 +4,16 @@
     { "id": "narrator", "name": "Narrator" },
     { "id": "mc", "name": "You", "color": "#6ab0ff" }
   ],
+  "assets": [
+    { "id": "bg_cafe", "src": "/assets/cafe/bg.webp" },
+    { "id": "her", "src": "/assets/cafe/her.webp" }
+  ],
   "nodes": [
     {
       "id": "start",
       "body": [
+        { "op": "scene", "bg": "bg_cafe" },
+        { "op": "show", "sprite": "her", "asset": "her", "at": "center" },
         { "op": "say", "who": "narrator", "text": "A quiet café. She looks up as you enter." },
         { "op": "set", "var": "trust", "value": 0 },
         {
@@ -23,6 +29,7 @@
     {
       "id": "sit",
       "body": [
+        { "op": "show", "sprite": "her", "asset": "her", "at": "left" },
         { "op": "say", "who": "mc", "text": "Mind if I join you?" },
         { "op": "add", "var": "trust", "amount": 1 },
         { "op": "roll", "var": "luck", "min": 1, "max": 6 },
@@ -39,6 +46,7 @@
     {
       "id": "leave",
       "body": [
+        { "op": "hide", "sprite": "her" },
         { "op": "say", "who": "mc", "text": "Maybe another time." },
         { "op": "jump", "goto": "ending_meh" }
       ]
@@ -53,6 +61,7 @@
     {
       "id": "ending_meh",
       "body": [
+        { "op": "scene" },
         { "op": "say", "who": "narrator", "text": "The door closes behind you. The café forgets you." },
         { "op": "end" }
       ]

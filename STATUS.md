@@ -86,12 +86,13 @@ just changeset / just version
 - **`@ludelier/cli`** — `validate | simulate | replay` agent harness.
 - **Determinism proven:** seed 42 → fixed hash; replay matches per-step; tampered hash + wrong seed throw.
 
-### P1 — browser player + first slice ✅
-- **`@ludelier/renderer-pixi`** — PixiJS v8 display-only renderer (dialog box, speaker, wrapped text, choice buttons). Zero game logic.
-- **`@ludelier/runtime-web`** — Vite + vite-plugin-pwa player: validates + plays a Story, **Dexie autosave/resume**, installable PWA (SVG icons, standard + maskable), `window.__ludelier` agent-native handle + `data-ready` first-paint flag.
-- **Playwright e2e** (3 tests): play-through via handle, visual regression (`opening.png`, SwiftShader, ≤3% diff), and **real canvas-click** input.
+### P1 — browser player + backgrounds/sprites ✅
+- **`@ludelier/renderer-pixi`** — PixiJS v8 display-only renderer: cover-fit **background**, bottom-anchored **character sprites** (left/center/right, id-sorted), dialog/speaker/wrapped text, choice buttons, **crossfades** on bg/sprite changes, dedicated (configurable) layer z-indices. Zero game logic.
+- **Backgrounds + character sprites** — Story DSL `assets` + `scene`/`show`/`hide` (cross-ref validated); engine tracks a persistent `stage` (bg + id-sorted sprites) threaded through the reducer and folded into the deterministic hash; renderer preloads + draws it.
+- **`@ludelier/runtime-web`** — Vite + vite-plugin-pwa player: validates + plays a Story, **asset preload**, **Dexie autosave/resume**, installable PWA (SVG icons, standard + maskable), `window.__ludelier` agent-native handle + `data-ready` first-paint flag + `data-anim` settle flag.
+- **Playwright e2e** (3 tests): play-through via handle, visual regression (`opening.png`, SwiftShader, ≤3% diff, waits for crossfade settle), and **real canvas-click** input.
 - **CI** (`ci.yml`): typecheck + unit + build + e2e.
-- `cafe.story.json` plays end-to-end in a real browser.
+- `cafe.story.json` plays end-to-end in a real browser **with a café background + character sprite** (AI-generated via the OpenAI Images API; see the `image-generation` agent skill).
 
 ### Tooling ✅
 - changesets (independent, version-PR only); `release.yml` + `changeset-check.yml`.
@@ -103,9 +104,9 @@ just changeset / just version
 ## 7. Verification status (as of last run)
 
 - `pnpm typecheck` — clean (tsc strict).
-- `pnpm test` — 19/19 unit tests pass.
-- `pnpm build:web` — OK (PixiJS bundle + PWA SW, 16 precache entries, icons in manifest).
-- `just e2e` — 3/3 pass, ~2–4s.
+- `pnpm test` — 29/29 unit tests pass (engine `stage.test.ts` + schema asset/scene/show/hide cases added).
+- `pnpm build:web` — OK (PixiJS bundle + PWA SW, 19 precache entries incl. webp art, icons in manifest).
+- `just e2e` — 3/3 pass, ~4–6s (opening frame now renders the café bg + character sprite).
 
 ---
 
@@ -114,7 +115,7 @@ just changeset / just version
 | Phase | Status | Scope |
 |---|---|---|
 | **P0** headless core | ✅ done | engine + schema + CLI harness + Vitest |
-| **P1** render + play | ✅ first slice + polish | PixiJS renderer, Vite/PWA shell, Dexie saves, Playwright. **Remaining:** backgrounds + character sprites (see §9) |
+| **P1** render + play | ✅ done | PixiJS renderer, Vite/PWA shell, Dexie saves, Playwright, **backgrounds + character sprites** (scene/show/hide + crossfades) |
 | **P2** AI authoring | ⬜ next | OpenRouter LLM adapter → Zod-valid Story content + self-correction loop |
 | **P3** AI assets | ⬜ | image/TTS gen (OpenRouter BYOK v1), provenance pipeline, Howler audio |
 | **P4** cloud seam | ⬜ | self-host BYOK config ↔ metered cloud per-tenant keys (gateway tool not yet chosen) |
@@ -123,8 +124,9 @@ just changeset / just version
 
 ## 9. Open tasks / TODO
 
-- **Backgrounds + character sprites** (biggest P1 gap — currently text on a flat color): extend the Story DSL with `scene`/`show`/`hide` directives, render images in renderer-pixi, decide asset source (local path / URL until P3 AI-gen). Touches `schema` + `renderer-pixi` + state.
-- Consume pending changesets via the first Version PR → bumps all packages to **0.1.0** (currently all `0.0.0`). Pending: `p0-initial-core` (minor ×3), `p1-web-player` (renderer+runtime minor), `p1-pwa-icons` (runtime patch).
+- ~~Backgrounds + character sprites~~ ✅ **done** — `scene`/`show`/`hide` + central `assets`, persistent `stage` in the hash, renderer preload + cover-fit bg + bottom-anchored sprites + crossfades. Demo art is committed under `runtime-web/public/assets/cafe/` (generated via the `image-generation` skill).
+- **Transitions** are a renderer-side crossfade only (instant data model; hash-neutral). Future polish: per-statement transition hints, named/custom sprite positions, sprite layering effects.
+- Consume pending changesets via the first Version PR → bumps all packages to **0.1.0** (currently all `0.0.0`). Pending: `p0-initial-core` (minor ×3), `p1-web-player` (renderer+runtime minor), `p1-pwa-icons` (runtime patch), `p1-scenes-sprites` (schema/engine/renderer/runtime minor, cli patch).
 - Switch changelog generator to `@changesets/changelog-github` once on GitHub.
 - Add `just fmt-check` (and optionally `just`) to CI, if desired (needs installing `just` on the runner).
 - No linter/formatter configured yet (no ESLint/Prettier) — add if wanted.
@@ -152,8 +154,8 @@ just changeset / just version
 
 ## 12. Git & release state
 
-- Repo initialized `git init -b main`; user is creating the remote (not yet pushed). Identity: Alain Schlesser.
-- **15 commits.** History (oldest → newest):
+- Repo on `github.com/schlessera/ludelier`; `main` tracks `origin/main` (pushed). Identity: Alain Schlesser.
+- History (oldest → newest) below; HEAD also adds the STATUS doc, **P1 backgrounds + sprites** (scene/show/hide + crossfades + committed café art), and the **`image-generation`** agent skill:
 
 ```
 361783e chore: bootstrap pnpm + TypeScript monorepo

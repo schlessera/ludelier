@@ -60,6 +60,28 @@ export const EndStatement = z.object({
   op: z.literal("end"),
 });
 
+/** Where a character sprite sits on the stage. The renderer maps these to x positions. */
+export const SpritePosition = z.enum(["left", "center", "right"]);
+export type SpritePosition = z.infer<typeof SpritePosition>;
+
+/** Set the background and clear all sprites. Omitting `bg` clears to an empty stage. */
+export const SceneStatement = z.object({
+  op: z.literal("scene"),
+  bg: Id.optional(),
+});
+/** Display a sprite in a named slot. Showing the same `sprite` slot again replaces it. */
+export const ShowStatement = z.object({
+  op: z.literal("show"),
+  sprite: Id,
+  asset: Id,
+  at: SpritePosition.default("center"),
+});
+/** Remove a sprite slot from the stage. Hiding an absent slot is a no-op. */
+export const HideStatement = z.object({
+  op: z.literal("hide"),
+  sprite: Id,
+});
+
 /** The full statement set. Discriminated on `op` for precise validation + narrowing. */
 export const Statement = z.discriminatedUnion("op", [
   SayStatement,
@@ -69,6 +91,9 @@ export const Statement = z.discriminatedUnion("op", [
   ChoiceStatement,
   JumpStatement,
   EndStatement,
+  SceneStatement,
+  ShowStatement,
+  HideStatement,
 ]);
 export type Statement = z.infer<typeof Statement>;
 
@@ -78,6 +103,17 @@ export const Character = z.object({
   color: z.string().optional(),
 });
 export type Character = z.infer<typeof Character>;
+
+/**
+ * A media asset (image now; audio later) referenced by id from statements.
+ * `src` is a path/URL the runtime resolves and loads — declaring assets centrally
+ * lets the renderer preload them and gives P3 a home for provenance sidecars.
+ */
+export const Asset = z.object({
+  id: Id,
+  src: z.string().min(1),
+});
+export type Asset = z.infer<typeof Asset>;
 
 export const StoryNode = z.object({
   id: Id,
@@ -97,6 +133,7 @@ export const StoryObject = z.object({
     seed: z.number().int().optional(),
   }),
   characters: z.array(Character).default([]),
+  assets: z.array(Asset).default([]),
   nodes: z.array(StoryNode).min(1),
 });
 export type Story = z.infer<typeof StoryObject>;

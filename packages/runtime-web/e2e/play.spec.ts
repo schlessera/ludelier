@@ -45,6 +45,8 @@ test("plays the café story to the good ending", async ({ page }) => {
 test("renders the opening frame", async ({ page }) => {
   await page.goto("/?new");
   await ready(page);
+  // Wait for the opening crossfade (bg + sprite fade-in) to settle to a stable frame.
+  await page.waitForFunction(() => !document.documentElement.dataset.anim);
   // Give Pixi one extra frame to flush text glyphs before snapshotting.
   await page.waitForTimeout(200);
   await expect(page).toHaveScreenshot("opening.png", { maxDiffPixelRatio: 0.03 });

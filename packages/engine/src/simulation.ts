@@ -11,7 +11,7 @@ export interface TraceLine {
 /** The logical (deterministic) slice of state that gets hashed. Excludes nothing
  *  that affects outcomes; transcript is included because it too is deterministic. */
 function snapshot(s: GameState) {
-  return { cursor: s.cursor, vars: s.vars, rng: s.rng, pending: s.pending, done: s.done };
+  return { cursor: s.cursor, vars: s.vars, rng: s.rng, stage: s.stage, pending: s.pending, done: s.done };
 }
 
 /**

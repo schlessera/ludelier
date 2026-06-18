@@ -46,6 +46,7 @@ switch (cmd) {
           done: sim.state.done,
           pending: sim.state.pending,
           vars: sim.state.vars,
+          stage: sim.state.stage,
           transcript: sim.transcript(),
         },
         null,
