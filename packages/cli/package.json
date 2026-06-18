@@ -1,0 +1,13 @@
+{
+  "name": "@ludelier/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ludelier": "src/index.ts"
+  },
+  "dependencies": {
+    "@ludelier/engine": "workspace:*",
+    "@ludelier/schema": "workspace:*"
+  }
+}

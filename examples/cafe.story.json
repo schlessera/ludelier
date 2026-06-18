@@ -1,0 +1,61 @@
+{
+  "meta": { "id": "cafe", "title": "Café Encounter", "start": "start", "seed": 42 },
+  "characters": [
+    { "id": "narrator", "name": "Narrator" },
+    { "id": "mc", "name": "You", "color": "#6ab0ff" }
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "body": [
+        { "op": "say", "who": "narrator", "text": "A quiet café. She looks up as you enter." },
+        { "op": "set", "var": "trust", "value": 0 },
+        {
+          "op": "choice",
+          "prompt": "What do you do?",
+          "options": [
+            { "label": "Sit down at her table", "goto": "sit" },
+            { "label": "Leave", "goto": "leave" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sit",
+      "body": [
+        { "op": "say", "who": "mc", "text": "Mind if I join you?" },
+        { "op": "add", "var": "trust", "amount": 1 },
+        { "op": "roll", "var": "luck", "min": 1, "max": 6 },
+        {
+          "op": "choice",
+          "prompt": "The conversation could go either way.",
+          "options": [
+            { "label": "Stay and talk", "goto": "ending_good", "if": { "var": "trust", "cmp": "gte", "value": 1 } },
+            { "label": "Make an excuse and leave", "goto": "leave" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "leave",
+      "body": [
+        { "op": "say", "who": "mc", "text": "Maybe another time." },
+        { "op": "jump", "goto": "ending_meh" }
+      ]
+    },
+    {
+      "id": "ending_good",
+      "body": [
+        { "op": "say", "who": "narrator", "text": "You talk for hours. The coffee goes cold, happily." },
+        { "op": "end" }
+      ]
+    },
+    {
+      "id": "ending_meh",
+      "body": [
+        { "op": "say", "who": "narrator", "text": "The door closes behind you. The café forgets you." },
+        { "op": "end" }
+      ]
+    }
+  ]
+}

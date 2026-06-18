@@ -1,0 +1,7 @@
+[
+  { "type": "ADVANCE" },
+  { "type": "CHOOSE", "index": 0 },
+  { "type": "ADVANCE" },
+  { "type": "CHOOSE", "index": 0 },
+  { "type": "ADVANCE" }
+]
