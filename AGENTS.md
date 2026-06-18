@@ -32,12 +32,17 @@ packages/
             seeded RNG (rng.ts), stable-key hash (hash.ts), headless Simulation
             runner + JSONL trace record/replay (simulation.ts). No engine/DOM deps.
   cli/      @ludelier/cli — the agent harness. `validate | simulate | replay`.
+  renderer-pixi/ @ludelier/renderer-pixi — display-only PixiJS v8 renderer
+            (cover-fit background, character sprites, dialog/choices, crossfades). No game logic.
+  runtime-web/   @ludelier/runtime-web — Vite + vite-plugin-pwa browser player.
+            Validates + plays a Story, preloads assets, Dexie autosave, window.__ludelier handle.
 examples/   cafe.story.json + cafe.actions.json (sample VN).
+.agents/    checked-in agent skills (see "Agent skills"). Assets live in runtime-web/public/assets/.
 .changeset/ changesets config + pending changesets.
 .github/    release.yml (Version-PR flow) + changeset-check.yml (PR gate).
 ```
 
-Internal deps use `workspace:*` (`engine` → `schema`, `cli` → both).
+Internal deps use `workspace:*` (`engine` → `schema`, `cli` → both, `renderer-pixi` → `engine`, `runtime-web` → all).
 
 ## Commands
 
@@ -68,6 +73,12 @@ The engine exposes a programmatic surface so an agent can grow/verify a game wit
 - `Simulation.record(actions)` → JSONL trace; `replayTrace(story, jsonl, {seed})` → asserts hash per step (regression tests from recorded sessions).
 
 Invest in this surface, not in renderer cleverness.
+
+## Agent skills
+
+Reusable, checked-in instructions for agents working in this repo live under `.agents/skills/`. Each skill is a folder with a `SKILL.md` (YAML frontmatter `name` + `description`, then the procedure) plus any helper scripts.
+
+- **`image-generation`** — generate **committed** image assets (VN backgrounds, character sprites) via the OpenAI Images API. Covers model choice (`gpt-image-2` for flexible-size opaque backgrounds, `gpt-image-1.5` for transparent sprites), the API call, ImageMagick post-processing (cover-fit / trim / webp), and this repo's asset conventions (commit under `runtime-web/public/assets/<story>/`, declare in the story `assets` array, reference by id). Ships `generate.sh`. **Caveat:** the claude.ai "ChatGPT Images 2.0" MCP runs server-side and can't deliver files to local disk — use this skill (direct API), not the MCP, for art that must be checked in.
 
 ## Versioning (changesets)
 
