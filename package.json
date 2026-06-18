@@ -14,10 +14,14 @@
     "changeset": "changeset",
     "changeset:status": "changeset status --since=main",
     "version": "changeset version && pnpm install --no-frozen-lockfile",
-    "release": "pnpm -r publish --access public --no-git-checks"
+    "release": "pnpm -r publish --access public --no-git-checks",
+    "dev:web": "pnpm --filter @ludelier/runtime-web dev",
+    "build:web": "pnpm --filter @ludelier/runtime-web build",
+    "e2e": "playwright test"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
+    "@playwright/test": "^1.48.0",
     "@types/node": "^22.7.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
