@@ -16,7 +16,8 @@
     "paths": {
       "@ludelier/schema": ["packages/schema/src/index.ts"],
       "@ludelier/engine": ["packages/engine/src/index.ts"],
-      "@ludelier/renderer-pixi": ["packages/renderer-pixi/src/index.ts"]
+      "@ludelier/renderer-pixi": ["packages/renderer-pixi/src/index.ts"],
+      "@ludelier/authoring": ["packages/authoring/src/index.ts"]
     }
   },
   "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "vitest.config.ts"]
