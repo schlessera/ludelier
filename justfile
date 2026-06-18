@@ -70,15 +70,29 @@ typecheck:
 test *args:
     pnpm test {{ args }}
 
-# Run Playwright e2e (boots the dev server + Chromium). `just test` for units.
+# Run Playwright e2e against a self-managed dev server (curl health-check).
+
+# Dodges a WSL2 quirk where Node's connect to a not-yet-bound port hangs ~135s.
 [group('quality')]
 e2e *args:
-    pnpm e2e {{ args }}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    free_port() { lsof -ti tcp:5179 2>/dev/null | xargs -r kill 2>/dev/null || true; }
+    free_port  # clear any orphan from a previous run
+    pnpm --filter @ludelier/runtime-web dev --host 127.0.0.1 --port 5179 --strictPort >/tmp/ludelier-e2e-server.log 2>&1 &
+    server=$!
+    trap 'kill "$server" 2>/dev/null || true; free_port' EXIT
+    for i in $(seq 1 120); do
+        if curl -fsS --connect-timeout 1 -o /dev/null http://127.0.0.1:5179/ 2>/dev/null; then break; fi
+        if [ "$i" = 120 ]; then echo "dev server failed to start:" >&2; cat /tmp/ludelier-e2e-server.log >&2; exit 1; fi
+        sleep 0.25
+    done
+    E2E_EXTERNAL_SERVER=1 pnpm e2e {{ args }}
 
 # Regenerate Playwright visual baselines (commit the result).
 [group('quality')]
 e2e-update:
-    pnpm exec playwright test --update-snapshots
+    {{ just_executable() }} e2e --update-snapshots
 
 # Fast pre-push gate: types + units + web build (no browser).
 [group('quality')]
