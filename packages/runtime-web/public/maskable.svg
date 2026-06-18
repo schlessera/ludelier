@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Ludelier">
+  <rect width="512" height="512" fill="#0e1117" />
+  <g fill="#6ab0ff" transform="translate(256 256) scale(0.62) translate(-256 -256)">
+    <rect x="188" y="120" width="68" height="272" rx="10" />
+    <rect x="188" y="324" width="180" height="68" rx="10" />
+  </g>
+</svg>

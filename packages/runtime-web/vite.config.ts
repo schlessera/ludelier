@@ -19,8 +19,10 @@ export default defineConfig({
         background_color: "#0e1117",
         display: "standalone",
         start_url: "/",
-        // TODO(P1): add icons (192/512 + maskable) for full installability.
-        icons: [],
+        icons: [
+          { src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
+          { src: "maskable.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
+        ],
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,json,svg,png,webp,woff2,wasm}"],
