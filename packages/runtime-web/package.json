@@ -1,0 +1,22 @@
+{
+  "name": "@ludelier/runtime-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ludelier/engine": "workspace:*",
+    "@ludelier/schema": "workspace:*",
+    "@ludelier/renderer-pixi": "workspace:*",
+    "dexie": "^4.0.8",
+    "pixi.js": "^8.6.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.11",
+    "vite-plugin-pwa": "^0.21.1"
+  }
+}
