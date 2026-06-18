@@ -114,18 +114,46 @@ identify -format "%f %wx%h %m alpha=%A %b\n" bg.webp her.webp
   are byte-stable. Regenerating art changes the bytes → you must refresh baselines (`just e2e-update`).
   Don't regenerate casually.
 
-## OpenRouter (P3) — transparency caveat
+## Provider abstraction (P3)
 
-This skill uses OpenAI's **direct** API. P3 locks assets to **OpenRouter BYOK**, and the transparency
-path does **not** carry over 1:1 (verified 2026-06; OpenRouter's catalog evolves — re-check):
+P3 generalizes asset generation behind a **multi-provider `AssetProvider`** — **OpenAI + OpenRouter
+from the start**, extensible to fal.ai/ElevenLabs. This skill's OpenAI-direct flow becomes the
+`openai` provider; transparency is a **routing decision**, not a gap.
 
-- OpenRouter exposes OpenAI image gen only as the **GPT-5 Image series** (`openai/gpt-5-image`,
-  `…-mini`, `gpt-5.4-image-2`); **`gpt-image-1.5` is not addressable by name.**
-- OpenRouter routes image gen through `/api/v1/chat/completions` + `modalities: ["image"]`, not
-  OpenAI's `/images/generations` — so there is **no `background:"transparent"`**. Transparency is a
-  separate `background_mode` (`original`/`transparent`/`solid`) param, currently **only on Sourceful
-  V2.5** (`sourceful/riverflow-v2.5-fast` / `-pro`). No GPT-5/OpenAI image model documents it.
-- So for transparent sprites via OpenRouter: use a **Sourceful riverflow-v2.5** model, OR generate
-  opaque on a flat background and **key locally** (ImageMagick chroma + `-trim`), OR keep a
-  direct-OpenAI sprite path. The locked `AssetProvider` interface is the seam — expose a transparency
-  capability the OpenRouter provider maps to `background_mode` or to a keying fallback.
+Each provider declares **capabilities**; a resolver picks one per request (explicit override, else
+the first configured provider that satisfies the request). A transparent sprite routes to a provider
+with `transparentBackground: true` (OpenAI `gpt-image-1.5`); an opaque background can go to OpenRouter
+or OpenAI `gpt-image-2`. BYOK is **per provider** (P4 cloud = metered per-tenant key per provider).
+
+```ts
+interface ProviderCapabilities {
+  image: boolean;
+  transparentBackground: boolean; // openai gpt-image-1.5/1: true; gpt-image-2: false
+  flexibleSizes: boolean;         // arbitrary WxH (gpt-image-2) vs fixed presets
+  maxEdgePx?: number;
+  models: string[];
+}
+interface ImageRequest {
+  prompt: string;
+  kind: "background" | "sprite";  // sprite ⇒ transparent unless overridden
+  size?: string; transparent?: boolean; model?: string; seed?: number;
+  provider?: string;              // optional explicit override
+}
+interface GeneratedAsset {
+  bytes: Uint8Array;
+  provenance: { provider: string; model: string; prompt: string; seed?: number; params: object; cost?: number; hash: string };
+}
+interface AssetProvider {
+  readonly id: string;            // "openai" | "openrouter" | "fal" | …
+  readonly capabilities: ProviderCapabilities;
+  generateImage(req: ImageRequest): Promise<GeneratedAsset>;
+}
+```
+
+**Why OpenAI is needed for transparency (don't rely on OpenRouter alone):** OpenRouter exposes OpenAI
+image gen only as the **GPT-5 Image series** (`openai/gpt-5-image`, `…-mini`, `gpt-5.4-image-2`) — no
+`gpt-image-1.5` by name — and routes via `/api/v1/chat/completions` + `modalities`, not
+`/images/generations`, so there is **no `background:"transparent"`**. OpenRouter's `background_mode`
+(`original`/`transparent`/`solid`) is currently **only on Sourceful V2.5** (`sourceful/riverflow-v2.5-*`).
+So: transparent sprites → the **`openai` provider** (this skill), or a **Sourceful riverflow** route on
+OpenRouter; everything else → either provider. (OpenRouter's catalog evolves — re-verify at implementation.)

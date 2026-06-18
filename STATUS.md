@@ -27,7 +27,7 @@ A living snapshot of where the project stands: decisions, what's built, what's o
 | Testing | **Vitest** (pure logic, no browser) + **Playwright** (E2E/visual, SwiftShader, `data-ready` flag) |
 | Build / PWA | **Vite** + **vite-plugin-pwa** (Workbox) + **Dexie** (IndexedDB) saves → Dexie Cloud addon = drop-in cloud-sync upsell |
 | Audio | **Howler.js** — deferred to P3 (no assets yet) |
-| Assets (v1) | **OpenRouter-only BYOK** behind an `AssetProvider` interface; fal.ai / ElevenLabs become drop-in adapters later. Provenance sidecars `{prompt,model,seed,params,cost,hash}` + hash-cache |
+| Assets (v1) | **Multi-provider** behind an `AssetProvider` interface — **OpenAI + OpenRouter** from the start, **BYOK per provider**, capability-routed (transparency → a provider that supports it, e.g. OpenAI `gpt-image-1.5`). fal.ai / ElevenLabs are later drop-ins via a provider registry. Provenance sidecars `{provider,model,prompt,seed,params,cost,hash}` + hash-cache |
 | Versioning | **changesets**, independent per-package, **version-PR only (no npm publish yet)** |
 | License | **MIT** open-core + `/ee` (commercial) for cloud features |
 
@@ -117,7 +117,7 @@ just changeset / just version
 | **P0** headless core | ✅ done | engine + schema + CLI harness + Vitest |
 | **P1** render + play | ✅ done | PixiJS renderer, Vite/PWA shell, Dexie saves, Playwright, **backgrounds + character sprites** (scene/show/hide + crossfades) |
 | **P2** AI authoring | ⬜ next | OpenRouter LLM adapter → Zod-valid Story content + self-correction loop |
-| **P3** AI assets | ⬜ | image/TTS gen (OpenRouter BYOK v1), provenance pipeline, Howler audio |
+| **P3** AI assets | ⬜ | image/TTS gen behind a **multi-provider `AssetProvider`** (OpenAI + OpenRouter v1, BYOK per provider, capability-routed), provenance pipeline, Howler audio |
 | **P4** cloud seam | ⬜ | self-host BYOK config ↔ metered cloud per-tenant keys (gateway tool not yet chosen) |
 
 ---
@@ -138,7 +138,7 @@ just changeset / just version
 
 - **P4 AI gateway tool** — NOT chosen. LiteLLM is a research candidate but explicitly deferred. Concept is locked (self-host BYOK config ↔ cloud metered per-tenant keys → usage billing; metering boundary = per-tenant key; monetize workflow + hosting, never the copyable artifact). Decide later.
 - **Asset providers beyond OpenRouter** — fal.ai (FLUX/LoRA) + ElevenLabs (voice/SFX) are the planned adapters; timing TBD (likely P3).
-- **Transparent sprites via OpenRouter (P3)** — the OpenAI-direct trick we use now (`gpt-image-1.5` + `background:"transparent"`) does **not** carry over: OpenRouter exposes OpenAI only as the GPT-5 Image series (no `gpt-image-1.5`), routes via `/chat/completions` + `modalities` (no `background:"transparent"`), and its `background_mode:transparent` is Sourceful-V2.5-only. Options at P3: a Sourceful riverflow model, local chroma-keying of opaque output, or a direct-OpenAI sprite path — reconcile behind `AssetProvider`. (Researched 2026-06-18; see the `image-generation` skill.)
+- **Transparent sprites — RESOLVED (2026-06-18, see §2):** `AssetProvider` is **multi-provider**, so transparency is a routing decision, not a gap. OpenAI (`gpt-image-1.5`/`gpt-image-1`) supplies native transparency; OpenRouter covers everything else (and Sourceful riverflow-v2.5 if transparency is wanted on that path). The resolver routes a transparent request to a capable configured provider — no single-provider lock, no keying fallback needed when OpenAI is configured.
 - **Author-facing DSL** — a simpler Ren'Py-like surface that compiles down to the canonical JSON; design later.
 - **Character/style consistency** strategy for AI art (per-character LoRA vs. model-native multi-subject like Nano Banana Pro) — revisit at P3.
 

@@ -90,10 +90,10 @@ Reusable, checked-in instructions for agents working in this repo live under `.a
 
 - **P0 — DONE:** headless deterministic core + Zod DSL + CLI harness + Vitest. (current)
 - **P1:** PixiJS v8 renderer + Vite + vite-plugin-pwa shell + Howler audio + Dexie saves + Playwright visual tests (`--use-gl=swiftshader`, `data-ready` flag). Make `cafe.story.json` play in a browser.
-- **P2:** AI authoring — OpenRouter LLM adapter generates Zod-valid content + self-correction loop.
-- **P3:** AI asset generation (OpenRouter BYOK v1) + provenance pipeline (prompt/model/seed sidecars, hash-cache).
-- **P4:** cloud seam — self-host BYOK config ↔ metered cloud per-tenant keys. AI-gateway tool choice is deferred (not locked).
+- **P2:** AI authoring — an LLM adapter generates Zod-valid content + self-correction loop, behind the same multi-provider shape as assets (OpenAI + OpenRouter pluggable).
+- **P3:** AI asset generation behind a **multi-provider `AssetProvider`** (OpenAI + OpenRouter from v1, BYOK per provider, capability-routed so e.g. a transparent sprite picks a provider that supports it; registry for future fal.ai/ElevenLabs) + provenance pipeline (provider/model/seed sidecars, hash-cache).
+- **P4:** cloud seam — self-host BYOK config ↔ metered cloud per-tenant keys (per provider; the per-tenant provider key is the metering boundary). AI-gateway tool choice is deferred (not locked).
 
 ## Locked stack decisions
 
-Renderer PixiJS v8 (WebGL2 primary, WebGPU opt-in) · build Vite + vite-plugin-pwa (injectManifest, two-tier cache) · audio Howler.js · saves Dexie.js (→ Dexie Cloud for sync upsell) · content Zod (JSON canonical; author DSLs compile down to JSON later) · tests Vitest + Playwright · assets v1 OpenRouter-only BYOK behind an `AssetProvider` interface (fal.ai/ElevenLabs are later drop-ins) · license MIT + `/ee`.
+Renderer PixiJS v8 (WebGL2 primary, WebGPU opt-in) · build Vite + vite-plugin-pwa (injectManifest, two-tier cache) · audio Howler.js · saves Dexie.js (→ Dexie Cloud for sync upsell) · content Zod (JSON canonical; author DSLs compile down to JSON later) · tests Vitest + Playwright · assets v1 **multi-provider** behind an `AssetProvider` interface — OpenAI + OpenRouter from the start, BYOK per provider, capability-routed (e.g. transparent sprites → a provider that supports them); fal.ai/ElevenLabs are later drop-ins · license MIT + `/ee`.
