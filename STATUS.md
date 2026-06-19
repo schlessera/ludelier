@@ -1,6 +1,6 @@
 # Ludelier — Project Status & Handoff
 
-_Last updated: 2026-06-18_
+_Last updated: 2026-06-19_
 
 A living snapshot of where the project stands: decisions, what's built, what's open, and the roadmap. For day-to-day conventions and the golden rules, see [AGENTS.md](./AGENTS.md). This file is the "where are we" overview.
 
@@ -29,6 +29,8 @@ A living snapshot of where the project stands: decisions, what's built, what's o
 | Build / PWA | **Vite** + **vite-plugin-pwa** (Workbox) + **Dexie** (IndexedDB) saves → Dexie Cloud addon = drop-in cloud-sync upsell |
 | Audio | **Howler.js** — deferred to P3 (no assets yet) |
 | Assets (v1) | **Multi-provider** behind an `AssetProvider` interface — **OpenAI + OpenRouter** from the start, **BYOK per provider**, capability-routed (transparency → a provider that supports it, e.g. OpenAI `gpt-image-1.5`). fal.ai / ElevenLabs are later drop-ins via a provider registry. Provenance sidecars `{provider,model,prompt,seed,params,cost,hash}` + hash-cache |
+| AI authoring (P2) | **Multi-provider `LLMProvider`** (OpenAI + OpenRouter, shared OpenAI-compatible core, BYOK per provider) + `generateStory()` self-correction loop; evolving into a **world API** (understand + manipulate tasks over the Story) exposed as LLM tools for the editor's agentic chat |
+| App shape | **Agent-native editor**: game-engine-style editor + built-in agentic chat; world API drives both the chat and the UI (parity). Play mode = the runtime-web PWA player |
 | Versioning | **changesets**, independent per-package, **version-PR only (no npm publish yet)** |
 | License | **MIT** open-core + `/ee` (commercial) for cloud features |
 
@@ -50,9 +52,11 @@ packages/
   schema/         @ludelier/schema — Zod Story DSL, validateStory(), storyJsonSchema()
   engine/         @ludelier/engine — reducer, seeded RNG, stable hash, Simulation, JSONL replay
   cli/            @ludelier/cli    — validate | simulate | replay (the agent harness)
+  authoring/      @ludelier/authoring — P2: LLMProvider (OpenAI+OpenRouter) + generateStory() loop
   renderer-pixi/  @ludelier/renderer-pixi — PixiJS v8 display-only renderer
   runtime-web/    @ludelier/runtime-web   — Vite + PWA player, Dexie autosave, window.__ludelier
 examples/         cafe.story.json + cafe.actions.json
+.agents/skills/   checked-in agent skills (image-generation)
 .changeset/       changesets config + pending changesets
 .github/workflows/ release.yml (Version PR), changeset-check.yml (PR gate), ci.yml (typecheck/unit/build + e2e)
 justfile          canonical task runner
@@ -129,9 +133,11 @@ just changeset / just version
 
 ## 9. Open tasks / TODO
 
+- **P2 world API (next):** add _understand_ tasks (`storyGraph` reachability/dead-ends, `listCharacters/Assets/Variables`, `describeNode`) + _manipulate_ tasks (`applyStoryOp`: add/update/remove node, append/insert/remove statement, `setMeta`, `addCharacter`, `addAsset`, `rewireGoto`) — each re-validates so the Story is never left invalid. Then expose them as LLM tool schemas (extend `LLMProvider` with tool-calling) and wire the editor agentic chat. Likely a new `@ludelier/world` package (or grow `authoring`).
+- **P2 validation (next):** live smoke test of `generateStory()` against a real provider/model (BYOK) + a CLI `author` command. Needs a current model slug (e.g. OpenRouter `openai/gpt-5-mini`).
 - ~~Backgrounds + character sprites~~ ✅ **done** — `scene`/`show`/`hide` + central `assets`, persistent `stage` in the hash, renderer preload + cover-fit bg + bottom-anchored sprites + crossfades. Demo art is committed under `runtime-web/public/assets/cafe/` (generated via the `image-generation` skill).
 - **Transitions** are a renderer-side crossfade only (instant data model; hash-neutral). Future polish: per-statement transition hints, named/custom sprite positions, sprite layering effects.
-- Consume pending changesets via the first Version PR → bumps all packages to **0.1.0** (currently all `0.0.0`). Pending: `p0-initial-core` (minor ×3), `p1-web-player` (renderer+runtime minor), `p1-pwa-icons` (runtime patch), `p1-scenes-sprites` (schema/engine/renderer/runtime minor, cli patch).
+- Consume pending changesets via the first Version PR → bumps all packages to **0.1.0** (currently all `0.0.0`). Pending: `p0-initial-core` (minor ×3), `p1-web-player` (renderer+runtime minor), `p1-pwa-icons` (runtime patch), `p1-scenes-sprites` (schema/engine/renderer/runtime minor, cli patch), `p2-authoring` (authoring minor).
 - Switch changelog generator to `@changesets/changelog-github` once on GitHub.
 - Add `just fmt-check` (and optionally `just`) to CI, if desired (needs installing `just` on the runner).
 - No linter/formatter configured yet (no ESLint/Prettier) — add if wanted.
@@ -144,6 +150,10 @@ just changeset / just version
 - **P4 AI gateway tool** — NOT chosen. LiteLLM is a research candidate but explicitly deferred. Concept is locked (self-host BYOK config ↔ cloud metered per-tenant keys → usage billing; metering boundary = per-tenant key; monetize workflow + hosting, never the copyable artifact). Decide later.
 - **Asset providers beyond OpenRouter** — fal.ai (FLUX/LoRA) + ElevenLabs (voice/SFX) are the planned adapters; timing TBD (likely P3).
 - **Transparent sprites — RESOLVED (2026-06-18, see §2):** `AssetProvider` is **multi-provider**, so transparency is a routing decision, not a gap. OpenAI (`gpt-image-1.5`/`gpt-image-1`) supplies native transparency; OpenRouter covers everything else (and Sourceful riverflow-v2.5 if transparency is wanted on that path). The resolver routes a transparent request to a capable configured provider — no single-provider lock, no keying fallback needed when OpenAI is configured.
+- **Editor app shell** — the editor chrome (panels/inspectors + chat) around the Pixi canvas: plain DOM/Web Components vs a UI framework (React/Svelte/Solid)? Not chosen. The runtime-web player stays the embedded play mode.
+- **Agent tool-calling** — extend `LLMProvider` with function/tool-calling (OpenAI-compatible `tools`/`tool_calls`) so the agentic chat invokes world-API tasks; define the tool schemas + the agent loop (where it runs — client-side BYOK first).
+- **World-API home** — `@ludelier/authoring` vs a dedicated `@ludelier/world` / `editor-core` package. Lean toward a split once the manipulate surface grows.
+- **Default model slugs** — `providersFromEnv()` defaults (`gpt-5-mini`, `openai/gpt-5-mini`) are unverified placeholders; confirm current slugs at the live smoke test.
 - **Author-facing DSL** — a simpler Ren'Py-like surface that compiles down to the canonical JSON; design later.
 - **Character/style consistency** strategy for AI art (per-character LoRA vs. model-native multi-subject like Nano Banana Pro) — revisit at P3.
 
@@ -161,7 +171,7 @@ just changeset / just version
 ## 12. Git & release state
 
 - Repo on `github.com/schlessera/ludelier`; `main` tracks `origin/main` (pushed). Identity: Alain Schlesser.
-- History (oldest → newest) below; HEAD also adds the STATUS doc, **P1 backgrounds + sprites** (scene/show/hide + crossfades + committed café art), and the **`image-generation`** agent skill:
+- History (oldest → newest) below ends at the P1 e2e work; **HEAD is well ahead** (`origin/main` @ `22023c1`, pushed) and additionally includes: the STATUS doc, **P1 backgrounds + sprites** (scene/show/hide + crossfades + committed café art), the **`image-generation`** agent skill + OpenRouter caveat, the **multi-provider `AssetProvider`** plan, **P2 `@ludelier/authoring`** (LLM provider seam + self-correction loop), and the **agent-native editor** vision docs:
 
 ```
 361783e chore: bootstrap pnpm + TypeScript monorepo
@@ -189,6 +199,6 @@ bcafd0e chore: add justfile task runner; document as canonical entrypoint in AGE
 
 - [ ] Register `ludelier.com` + `.io` / `.ai`.
 - [ ] Human USPTO + EUIPO trademark search; file in classes 9 / 41 / 42.
-- [ ] Push to remote; enable GitHub Actions to create PRs + read/write permissions.
+- [x] Push to remote (`github.com/schlessera/ludelier`, `main` tracks `origin/main`). _Still: enable GitHub Actions to create PRs + read/write permissions._
 - [ ] Before first npm publish: drop `private`, add `publishConfig.access: public`, set `access: public` in changesets config, add a build step, enable the `publish:` input in `release.yml` (prefer OIDC trusted publishing).
 - [ ] Add a brand style guide noting the _luder_ connotation for Scandinavian/German markets.
