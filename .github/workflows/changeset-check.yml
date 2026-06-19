@@ -14,7 +14,7 @@ jobs:
     # Don't nag bots or the auto-generated "Version Packages" PR (it deletes changesets).
     if: github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'changeset-release/')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
