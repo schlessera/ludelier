@@ -26,6 +26,7 @@ jobs:
   release:
     name: Version Packages
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write # push the version-bump commit
       pull-requests: write # open / update the "Version Packages" PR

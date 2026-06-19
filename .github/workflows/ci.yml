@@ -7,10 +7,17 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel an in-progress run when a newer commit lands on the same ref —
+# stops stale runs from lingering (one hung e2e job once ran for 6h).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     name: Typecheck · unit · build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -26,6 +33,7 @@ jobs:
   e2e:
     name: Playwright e2e
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
