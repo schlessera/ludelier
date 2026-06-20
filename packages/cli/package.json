@@ -7,7 +7,9 @@
     "ludelier": "src/index.ts"
   },
   "dependencies": {
+    "@ludelier/authoring": "workspace:*",
     "@ludelier/engine": "workspace:*",
-    "@ludelier/schema": "workspace:*"
+    "@ludelier/schema": "workspace:*",
+    "@ludelier/world": "workspace:*"
   }
 }

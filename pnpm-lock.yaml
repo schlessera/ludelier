@@ -38,12 +38,18 @@ importers:
 
   packages/cli:
     dependencies:
+      '@ludelier/authoring':
+        specifier: workspace:*
+        version: link:../authoring
       '@ludelier/engine':
         specifier: workspace:*
         version: link:../engine
       '@ludelier/schema':
         specifier: workspace:*
         version: link:../schema
+      '@ludelier/world':
+        specifier: workspace:*
+        version: link:../world
 
   packages/engine:
     dependencies:
