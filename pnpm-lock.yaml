@@ -32,6 +32,9 @@ importers:
       '@ludelier/schema':
         specifier: workspace:*
         version: link:../schema
+      '@ludelier/world':
+        specifier: workspace:*
+        version: link:../world
 
   packages/cli:
     dependencies:
