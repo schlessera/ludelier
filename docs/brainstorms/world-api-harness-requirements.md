@@ -25,7 +25,7 @@ The plan (AGENTS.md → "The app: agent-native editor") calls for understand + m
 
 ## The world API surface
 
-Uniform result envelope for every task: `{ ok: true, data } | { ok: false, issues }`.
+Uniform result envelope for every task: `{ success: true, data } | { success: false, issues }`. _(Revised from `{ ok }` during planning to align with `@ludelier/schema`'s `ValidateResult`; see plan KTD-5.)_
 
 **Understand (read-only, deterministic):**
 - `validate` → cross-reference + shape issues (`validateStory`).
