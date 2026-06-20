@@ -19,6 +19,11 @@ function stable(value: unknown): string {
   );
 }
 
+/** Stable, key-sorted JSON of any value — for structural equality / diffing. */
+export function stableStringify(value: unknown): string {
+  return stable(value);
+}
+
 /**
  * Canonical Story form (KTD-6): first **materialise schema defaults** by running the
  * Story through `StoryObject.parse` (so an absent `characters`/`assets` becomes `[]`

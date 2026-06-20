@@ -10,6 +10,9 @@ import { validateTask } from "./understand/validate";
 import { listCharactersTask, listAssetsTask, listVariablesTask } from "./understand/lists";
 import { getNodeTask } from "./understand/get-node";
 import { findReferencesTask } from "./understand/references";
+import { graphTask } from "./understand/graph";
+import { simulateTask } from "./understand/simulate";
+import { diffTask } from "./understand/diff";
 import { createNodeTask, deleteNodeTask } from "./manipulate/nodes";
 import { setMetaTask } from "./manipulate/meta";
 import { addCharacterTask } from "./manipulate/characters";
@@ -38,6 +41,10 @@ export function createWorld(): Registry {
   world.register(listVariablesTask);
   world.register(getNodeTask);
   world.register(findReferencesTask);
+  // U10/U11/U12 — understand (graph, simulate, diff)
+  world.register(graphTask);
+  world.register(simulateTask);
+  world.register(diffTask);
   // U3 — manipulate (the spine)
   world.register(createNodeTask);
   world.register(deleteNodeTask);
