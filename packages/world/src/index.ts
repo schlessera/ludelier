@@ -3,6 +3,7 @@ export * from "./canonical";
 export * from "./registry";
 export * from "./sort";
 export * from "./applyEdit";
+export * from "./log";
 
 import { Registry } from "./registry";
 import { validateTask } from "./understand/validate";
