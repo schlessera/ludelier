@@ -102,6 +102,7 @@ just changeset / just version
 ### P2 — AI authoring + agent world API 🔨 (in progress)
 - **`@ludelier/authoring`** (first slice) — `LLMProvider` seam mirroring `AssetProvider` (OpenAI + OpenRouter over a shared OpenAI-compatible core; BYOK-per-provider registry) + `generateStory()`: a provider-agnostic **self-correction loop** that constrains output with `storyJsonSchema()`, validates with `validateStory()`, and feeds issues back until valid or attempts exhausted. Hermetic mock-provider / fake-fetch tests.
 - **Next:** the **world API** — _understand_ (graph/inspect/validate/simulate) + _manipulate_ (validated Story mutations) tasks exposed as LLM tools; then the **editor agentic-chat UI** (runtime-web player → editor). Plus a live smoke test + a CLI `author` command.
+- **Design captured (2026-06-19) — ready for handoff:** `docs/brainstorms/world-api-harness-requirements.md` (requirements) + `docs/plans/2026-06-19-001-feat-world-api-agent-harness-plan.md` (slice-1 plan, units U1–U9). Locked: new pure `@ludelier/world` package; **self-describing task registry** (`describe()` derives LLM tools + CLI subcommands); **event-sourced run-grouped edit log** (`applyEdit` always re-validates; undo/redo/revert-run by refold); **autonomous run→review-after** agent loop; CLI-first slice proven with a **scripted provider** (no live LLM). Slice-1 manipulate set = the 9-command spine (rest deferred, additive).
 
 ### Tooling ✅
 - changesets (independent, version-PR only); `release.yml` + `changeset-check.yml`.
