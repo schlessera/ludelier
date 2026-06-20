@@ -4,6 +4,9 @@ export * from "./registry";
 export * from "./sort";
 export * from "./applyEdit";
 export * from "./log";
+export type { GraphReport } from "./understand/graph";
+export type { Reference } from "./understand/references";
+export { diffStories, type StoryDiff, type IdSetDiff } from "./understand/diff";
 
 import { Registry } from "./registry";
 import { validateTask } from "./understand/validate";

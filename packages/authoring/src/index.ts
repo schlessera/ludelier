@@ -5,3 +5,4 @@ export * from "./providers/openrouter";
 export * from "./registry";
 export * from "./author";
 export * from "./tools";
+export * from "./run";
