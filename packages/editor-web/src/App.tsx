@@ -5,12 +5,15 @@ import type { EditorSnapshot } from "@ludelier/editor-core";
 import { validateStory } from "@ludelier/schema";
 import { openRouterProvider } from "@ludelier/authoring";
 import type { AgentRunResult } from "@ludelier/authoring";
+import { PlayCanvas } from "./PlayCanvas";
 import cafeStory from "../../../examples/cafe.story.json";
 
-/** Re-render the subtree whenever the session emits a change (edit / undo / redo / chat). */
-function useRerenderOnChange(session: EditorSession): void {
-  const [, force] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => session.subscribe(() => force()), [session]);
+/** A counter that bumps on every session change (edit / undo / redo / chat) — drives re-render
+ *  and signals the play preview to replay the updated story. */
+function useSessionVersion(session: EditorSession): number {
+  const [version, bump] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => session.subscribe(() => bump()), [session]);
+  return version;
 }
 
 export function App(): JSX.Element {
@@ -19,7 +22,7 @@ export function App(): JSX.Element {
     if (!v.success) throw new Error(`example story invalid: ${JSON.stringify(v.issues)}`);
     return new EditorSession(v.data);
   }, []);
-  useRerenderOnChange(session);
+  const version = useSessionVersion(session);
   const snap = session.snapshot();
 
   return (
@@ -27,7 +30,10 @@ export function App(): JSX.Element {
       <Toolbar session={session} snap={snap} />
       <div className="cols">
         <ChatPanel session={session} />
-        <StoryInspector snap={snap} />
+        <div className="center">
+          <PlayCanvas session={session} version={version} />
+          <StoryInspector snap={snap} />
+        </div>
         <SidePanel session={session} snap={snap} />
       </div>
     </div>
@@ -35,12 +41,28 @@ export function App(): JSX.Element {
 }
 
 function Toolbar({ session, snap }: { session: EditorSession; snap: EditorSnapshot }): JSX.Element {
+  const [newId, setNewId] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+
+  function addNode(): void {
+    const id = newId.trim();
+    if (!id) return;
+    const res = session.edit("create-node", { id });
+    if (res.success) {
+      setNewId("");
+      setErr(null);
+    } else {
+      setErr(res.issues.map((i) => i.message).join("; "));
+    }
+  }
+
   return (
     <header className="toolbar">
       <div className="brand">
         Ludelier <span className="muted">· editor</span>
       </div>
       <span className={`badge ${snap.valid ? "ok" : "bad"}`}>{snap.valid ? "valid" : "invalid"}</span>
+      {err && <span className="err">{err}</span>}
       <div className="spacer" />
       <button onClick={() => session.undo()} disabled={!snap.canUndo}>
         ↶ Undo
@@ -48,14 +70,16 @@ function Toolbar({ session, snap }: { session: EditorSession; snap: EditorSnapsh
       <button onClick={() => session.redo()} disabled={!snap.canRedo}>
         ↷ Redo
       </button>
-      <button
-        onClick={() => {
-          const id = prompt("New node id:")?.trim();
-          if (!id) return;
-          const res = session.edit("create-node", { id });
-          if (!res.success) alert(`create-node failed:\n${res.issues.map((i) => i.message).join("\n")}`);
+      <input
+        className="node-id"
+        placeholder="new node id"
+        value={newId}
+        onChange={(e) => setNewId(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") addNode();
         }}
-      >
+      />
+      <button onClick={addNode} disabled={!newId.trim()}>
         ＋ Node
       </button>
     </header>
