@@ -71,12 +71,21 @@ importers:
       '@ludelier/editor-core':
         specifier: workspace:*
         version: link:../editor-core
+      '@ludelier/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@ludelier/renderer-pixi':
+        specifier: workspace:*
+        version: link:../renderer-pixi
       '@ludelier/schema':
         specifier: workspace:*
         version: link:../schema
       '@ludelier/world':
         specifier: workspace:*
         version: link:../world
+      pixi.js:
+        specifier: ^8.6.0
+        version: 8.19.0
       react:
         specifier: ^18.3.1
         version: 18.3.1

@@ -102,6 +102,30 @@ textarea {
   overflow: auto;
 }
 
+.center {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--line);
+  overflow: auto;
+}
+
+.stage-host canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.play-actions {
+  margin-top: 8px;
+}
+
+.node-id {
+  width: 150px;
+}
+
 .panel h2 {
   font-size: 12px;
   text-transform: uppercase;
