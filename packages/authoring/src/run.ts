@@ -100,7 +100,19 @@ function agentSystemPrompt(world: Registry): string {
     "You are an editing agent for the Ludelier visual-novel engine.",
     "Use the provided tools to inspect and edit the story. Every edit is validated;",
     "if a tool returns an error, read the issues and correct your next call.",
-    "Call the `done` tool when the task is complete.",
+    "",
+    "Work in this order:",
+    "1. Inspect first — use graph, get-node, and the list-* tools to understand the story before editing.",
+    "2. Make your edits with the manipulate tools.",
+    "3. Keep the graph healthy: every node you create must be reachable from the start node (wire it in",
+    "   with rewire-goto, or add a choice option / jump that targets it) and must not be a dead end",
+    "   (give an ending node an `end` statement; give a transit node a jump or choice out).",
+    "4. Never remove an existing `end` statement unless you immediately replace it.",
+    "5. Before finishing, run the `graph` tool and confirm `unreachable` is empty and you introduced no",
+    "   new dead ends. Only then call the `done` tool.",
+    "",
+    "The `done` tool is a gate: if your edits left a new unreachable or dead-end node it is rejected",
+    "with the problems listed — fix them and call `done` again.",
     `Available world tasks: ${names}.`,
   ].join("\n");
 }
@@ -135,7 +147,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   const world = opts.world ?? createWorld();
   const log = new EditLog(world, opts.story);
   const runId = opts.runId ?? defaultRunId();
-  const maxSteps = opts.maxSteps ?? 12;
+  const maxSteps = opts.maxSteps ?? 24;
   const tools = [...worldTools(world), DONE_TOOL];
 
   // Pre-run baseline: the agent is only held to problems *it* introduces (describeGate).

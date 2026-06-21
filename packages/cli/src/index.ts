@@ -124,12 +124,27 @@ function runWorld(rest: string[]): number {
 async function runAuthor(rest: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: rest,
-    options: { story: { type: "string" }, log: { type: "string" }, out: { type: "string", short: "o" } },
+    options: {
+      story: { type: "string" },
+      log: { type: "string" },
+      out: { type: "string", short: "o" },
+      "max-steps": { type: "string" },
+    },
     allowPositionals: true,
   });
-  if (positionals[0] !== "run") throw new CliError('usage: author run "<prompt>" --story <f> [--log l] [-o out]', 2);
+  if (positionals[0] !== "run") {
+    throw new CliError('usage: author run "<prompt>" --story <f> [--log l] [-o out] [--max-steps n]', 2);
+  }
   const prompt = positionals[1];
   if (!prompt) throw new CliError("author run requires a prompt", 2);
+
+  let maxSteps: number | undefined;
+  if (values["max-steps"] !== undefined) {
+    maxSteps = Number(values["max-steps"]);
+    if (!Number.isInteger(maxSteps) || maxSteps < 1) {
+      throw new CliError("--max-steps must be a positive integer", 2);
+    }
+  }
 
   const providers = providersFromEnv(process.env);
   const provider = providers.openai ?? providers.openrouter;
@@ -141,7 +156,7 @@ async function runAuthor(rest: string[]): Promise<number> {
   }
 
   const story = loadStory(values.story);
-  const res = await runAgent({ provider, prompt, story });
+  const res = await runAgent({ provider, prompt, story, maxSteps });
   writeOut(JSON.stringify(res.story, null, 2), values.out);
   if (values.log) writeFileSync(values.log, res.log.export());
   const v = res.verification;
