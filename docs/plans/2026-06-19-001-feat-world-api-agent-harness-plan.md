@@ -1,7 +1,7 @@
 ---
 title: "feat: World API & agent harness — slice 1 (CLI-first)"
 type: feat
-status: active
+status: completed
 created: 2026-06-19
 deepened: 2026-06-21
 origin: docs/brainstorms/world-api-harness-requirements.md
