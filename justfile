@@ -53,10 +53,16 @@ cli *args:
 demo:
     pnpm cli simulate examples/cafe.story.json --actions examples/cafe.actions.json --seed 42
 
-# Build the web player for production.
+# Build the web player + editor for production.
 [group('dev')]
 build:
     pnpm build:web
+    pnpm build:editor
+
+# Run the React editor shell dev server (Vite).
+[group('dev')]
+dev-editor:
+    pnpm dev:editor
 
 # ── Quality ───────────────────────────────────────────────────────────────
 
