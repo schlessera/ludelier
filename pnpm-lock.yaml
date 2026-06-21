@@ -32,15 +32,24 @@ importers:
       '@ludelier/schema':
         specifier: workspace:*
         version: link:../schema
+      '@ludelier/world':
+        specifier: workspace:*
+        version: link:../world
 
   packages/cli:
     dependencies:
+      '@ludelier/authoring':
+        specifier: workspace:*
+        version: link:../authoring
       '@ludelier/engine':
         specifier: workspace:*
         version: link:../engine
       '@ludelier/schema':
         specifier: workspace:*
         version: link:../schema
+      '@ludelier/world':
+        specifier: workspace:*
+        version: link:../world
 
   packages/engine:
     dependencies:
@@ -84,6 +93,18 @@ importers:
 
   packages/schema:
     dependencies:
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+
+  packages/world:
+    dependencies:
+      '@ludelier/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@ludelier/schema':
+        specifier: workspace:*
+        version: link:../schema
       zod:
         specifier: ^4.0.0
         version: 4.4.3

@@ -1,6 +1,6 @@
 # Ludelier — Project Status & Handoff
 
-_Last updated: 2026-06-19_
+_Last updated: 2026-06-21_
 
 A living snapshot of where the project stands: decisions, what's built, what's open, and the roadmap. For day-to-day conventions and the golden rules, see [AGENTS.md](./AGENTS.md). This file is the "where are we" overview.
 
@@ -49,10 +49,11 @@ Cleared (2026-06-18) across npm, GitHub, all domains (RDAP incl. `.com`), tradem
 
 ```
 packages/
-  schema/         @ludelier/schema — Zod Story DSL, validateStory(), storyJsonSchema()
+  schema/         @ludelier/schema — Zod Story DSL, validateStory(), storyJsonSchema()/toJsonSchema()
   engine/         @ludelier/engine — reducer, seeded RNG, stable hash, Simulation, JSONL replay
-  cli/            @ludelier/cli    — validate | simulate | replay (the agent harness)
-  authoring/      @ludelier/authoring — P2: LLMProvider (OpenAI+OpenRouter) + generateStory() loop
+  world/          @ludelier/world  — agent world API: task registry + describe(), understand/manipulate tasks, applyEdit, EditLog
+  cli/            @ludelier/cli    — validate | simulate | replay | world … | author run (the agent harness)
+  authoring/      @ludelier/authoring — P2: LLMProvider (+tool-calling) + generateStory() loop + worldTools/dispatch + runAgent
   renderer-pixi/  @ludelier/renderer-pixi — PixiJS v8 display-only renderer
   runtime-web/    @ludelier/runtime-web   — Vite + PWA player, Dexie autosave, window.__ludelier
 examples/         cafe.story.json + cafe.actions.json
@@ -101,8 +102,8 @@ just changeset / just version
 
 ### P2 — AI authoring + agent world API 🔨 (in progress)
 - **`@ludelier/authoring`** (first slice) — `LLMProvider` seam mirroring `AssetProvider` (OpenAI + OpenRouter over a shared OpenAI-compatible core; BYOK-per-provider registry) + `generateStory()`: a provider-agnostic **self-correction loop** that constrains output with `storyJsonSchema()`, validates with `validateStory()`, and feeds issues back until valid or attempts exhausted. Hermetic mock-provider / fake-fetch tests.
-- **Next:** the **world API** — _understand_ (graph/inspect/validate/simulate) + _manipulate_ (validated Story mutations) tasks exposed as LLM tools; then the **editor agentic-chat UI** (runtime-web player → editor). Plus a live smoke test + a CLI `author` command.
-- **Design captured (2026-06-19) — ready for handoff:** `docs/brainstorms/world-api-harness-requirements.md` (requirements) + `docs/plans/2026-06-19-001-feat-world-api-agent-harness-plan.md` (slice-1 plan, units U1–U9). Locked: new pure `@ludelier/world` package; **self-describing task registry** (`describe()` derives LLM tools + CLI subcommands); **event-sourced run-grouped edit log** (`applyEdit` always re-validates; undo/redo/revert-run by refold); **autonomous run→review-after** agent loop; CLI-first slice proven with a **scripted provider** (no live LLM). Slice-1 manipulate set = the 9-command spine (rest deferred, additive).
+- **World API & agent harness — slice 1 ✅ (2026-06-21):** new pure **`@ludelier/world`** package — self-describing task registry (`describe()` manifest derives CLI subcommands + LLM tools), 9 understand tasks + a 12-command flattened manipulate spine through an always-valid `applyEdit` (validateStory + world-local `say.who` check), event-sourced `EditLog` (linear-history undo/redo, contiguous-tail `revertRun`, JSONL replay), `{success}` envelope, canonical `hashStory`. `@ludelier/authoring` gained provider tool-calling + a `worldTools`/`dispatch` adapter + the autonomous `runAgent` loop (self-verify, partial-run aware, hermetic via scripted provider). `@ludelier/cli` gained registry-derived `world …` subcommands + `author run` (entrypoint refactored to a testable `run(argv)`). 60 unit tests across world/authoring/cli; `just check` green. Plan: `docs/plans/2026-06-19-001-feat-world-api-agent-harness-plan.md` (deepened + reviewed; units U1–U12).
+- **Next:** the **editor agentic-chat UI** (runtime-web player → editor) wiring the world API to the chat panel + inspectors; deferred manipulate commands (additive registry entries); a live-LLM smoke test (BYOK).
 
 ### Tooling ✅
 - changesets (independent, version-PR only); `release.yml` + `changeset-check.yml`.
@@ -126,7 +127,7 @@ just changeset / just version
 |---|---|---|
 | **P0** headless core | ✅ done | engine + schema + CLI harness + Vitest |
 | **P1** render + play | ✅ done | PixiJS renderer, Vite/PWA shell, Dexie saves, Playwright, **backgrounds + character sprites** (scene/show/hide + crossfades) |
-| **P2** AI authoring + world API | 🔨 in progress | multi-provider LLM adapter (OpenAI + OpenRouter) + self-correction loop **[done]**; understand/manipulate world API as agent tools; editor agentic chat |
+| **P2** AI authoring + world API | 🔨 in progress | multi-provider LLM adapter (OpenAI + OpenRouter) + self-correction loop **[done]**; understand/manipulate world API + registry + agent loop + CLI surface **[done, slice 1]**; editor agentic chat (next) |
 | **P3** AI assets | ⬜ | image/TTS gen behind a **multi-provider `AssetProvider`** (OpenAI + OpenRouter v1, BYOK per provider, capability-routed), provenance pipeline, Howler audio |
 | **P4** cloud seam | ⬜ | self-host BYOK config ↔ metered cloud per-tenant keys (gateway tool not yet chosen) |
 
@@ -134,7 +135,7 @@ just changeset / just version
 
 ## 9. Open tasks / TODO
 
-- **P2 world API (next):** add _understand_ tasks (`storyGraph` reachability/dead-ends, `listCharacters/Assets/Variables`, `describeNode`) + _manipulate_ tasks (`applyStoryOp`: add/update/remove node, append/insert/remove statement, `setMeta`, `addCharacter`, `addAsset`, `rewireGoto`) — each re-validates so the Story is never left invalid. Then expose them as LLM tool schemas (extend `LLMProvider` with tool-calling) and wire the editor agentic chat. Likely a new `@ludelier/world` package (or grow `authoring`).
+- **P2 world API (slice 1 ✅ done):** `@ludelier/world` shipped — understand + manipulate tasks through a self-describing registry + always-valid `applyEdit` + event-sourced `EditLog`, exposed as LLM tools (`worldTools`/`dispatch` + `runAgent`) and registry-derived CLI subcommands. **Next:** wire the editor agentic chat (runtime-web → editor) to the world API; add the deferred manipulate commands (rename/update/move/remove variants, choice-option ops) as additive registry entries; bounded `simulate` all-paths.
 - **P2 validation (next):** live smoke test of `generateStory()` against a real provider/model (BYOK) + a CLI `author` command. Needs a current model slug (e.g. OpenRouter `openai/gpt-5-mini`).
 - ~~Backgrounds + character sprites~~ ✅ **done** — `scene`/`show`/`hide` + central `assets`, persistent `stage` in the hash, renderer preload + cover-fit bg + bottom-anchored sprites + crossfades. Demo art is committed under `runtime-web/public/assets/cafe/` (generated via the `image-generation` skill).
 - **Transitions** are a renderer-side crossfade only (instant data model; hash-neutral). Future polish: per-statement transition hints, named/custom sprite positions, sprite layering effects.

@@ -1,0 +1,139 @@
+import { describe, expect, it } from "vitest";
+import { createWorld, applyEdit, hashStory } from "@ludelier/world";
+import { validateStory, type Story } from "@ludelier/schema";
+import { runAgent } from "../src/run";
+import type { LLMProvider, ToolCall } from "../src/provider";
+
+const base: Story = {
+  meta: { id: "t", title: "T", start: "a" },
+  characters: [{ id: "n", name: "N" }],
+  assets: [],
+  nodes: [{ id: "a", body: [{ op: "say", who: "n", text: "hi" }, { op: "end" }] }],
+};
+
+type Step = ToolCall[] | { text: string };
+
+/** A provider that emits scripted tool-call turns (or a final text turn). */
+function scriptedTools(steps: Step[]): LLMProvider {
+  let i = 0;
+  return {
+    id: "mock",
+    capabilities: { jsonSchema: true, tools: true },
+    async complete() {
+      const step = steps[Math.min(i, steps.length - 1)]!;
+      i++;
+      if (Array.isArray(step)) return { text: "", model: "mock", toolCalls: step };
+      return { text: step.text, model: "mock" };
+    },
+  };
+}
+
+function call(name: string, args: unknown, id = "c"): ToolCall {
+  return { id, name, arguments: args };
+}
+
+describe("runAgent (hermetic, scripted provider)", () => {
+  it("builds a valid story branch and self-verifies", async () => {
+    const provider = scriptedTools([
+      [call("create-node", { id: "b" }, "1")],
+      [call("append-say", { nodeId: "b", who: "n", text: "branch" }, "2")],
+      [call("append-end", { nodeId: "b" }, "3")],
+      [call("rewire-goto", { nodeId: "a", index: 1, goto: "b" }, "4")], // a's [say, ...]; index 1 must be a jump/choice
+      [call("done", {}, "5")],
+    ]);
+    // Give node a a jump at index 1 so rewire-goto has a target.
+    const story: Story = {
+      ...base,
+      nodes: [
+        { id: "a", body: [{ op: "say", who: "n", text: "hi" }, { op: "jump", goto: "a" }] },
+        { id: "z", body: [{ op: "end" }] },
+      ],
+      meta: { id: "t", title: "T", start: "a" },
+    };
+    const res = await runAgent({ provider, prompt: "add a branch", story, runId: "run-1", maxSteps: 10 });
+    expect(res.ok).toBe(true);
+    expect(res.verification.valid).toBe(true);
+    expect(res.completed).toBe(true);
+    expect(res.story.nodes.some((n) => n.id === "b")).toBe(true);
+    expect(res.diff.nodes.added).toContain("b");
+  });
+
+  it("keeps the story Zod-valid at every applied step", async () => {
+    const provider = scriptedTools([
+      [call("create-node", { id: "b" }, "1")],
+      [call("append-say", { nodeId: "b", who: "n", text: "x" }, "2")],
+      [call("append-end", { nodeId: "b" }, "3")],
+      [call("done", {}, "4")],
+    ]);
+    const res = await runAgent({ provider, prompt: "x", story: base, runId: "run-1", maxSteps: 10 });
+    // Re-fold each command prefix and assert validity throughout.
+    const w = createWorld();
+    let s = base;
+    for (const rec of res.commands) {
+      const applied = applyEdit(w, s, rec.command, rec.params);
+      expect(applied.success).toBe(true);
+      if (applied.success) {
+        s = applied.data;
+        expect(validateStory(s).success).toBe(true);
+      }
+    }
+    expect(res.commands.length).toBe(3);
+  });
+
+  it("revertRun on the result restores the pre-run story", async () => {
+    const provider = scriptedTools([
+      [call("create-node", { id: "b" }, "1")],
+      [call("append-end", { nodeId: "b" }, "2")],
+      [call("done", {}, "3")],
+    ]);
+    const res = await runAgent({ provider, prompt: "x", story: base, runId: "run-1", maxSteps: 10 });
+    const reverted = res.log.revertRun(res.runId);
+    expect(reverted.success).toBe(true);
+    if (reverted.success) expect(hashStory(reverted.data)).toBe(hashStory(base));
+  });
+
+  it("stops at maxSteps with a partial, non-completed result whose records persist", async () => {
+    // Never emits done; each turn makes one edit.
+    const provider = scriptedTools([
+      [call("create-node", { id: "b" }, "1")],
+      [call("create-node", { id: "c" }, "2")],
+      [call("create-node", { id: "d" }, "3")],
+    ]);
+    const res = await runAgent({ provider, prompt: "x", story: base, runId: "run-1", maxSteps: 2 });
+    expect(res.completed).toBe(false);
+    expect(res.commands.length).toBe(2); // only 2 steps ran
+    expect(res.log.recordsView().length).toBe(2); // committed, not rolled back
+  });
+
+  it("feeds an invalid tool call's issues back, then recovers", async () => {
+    const provider = scriptedTools([
+      [call("create-node", { id: "bad id!" }, "1")], // rejected
+      [call("create-node", { id: "b" }, "2")],
+      [call("done", {}, "3")],
+    ]);
+    const res = await runAgent({ provider, prompt: "x", story: base, runId: "run-1", maxSteps: 10 });
+    expect(res.ok).toBe(true);
+    expect(res.story.nodes.some((n) => n.id === "b")).toBe(true);
+    // a tool-result message carrying the failure was fed back
+    const toolMsgs = res.transcript.filter((m) => m.role === "tool");
+    expect(toolMsgs.some((m) => m.content.includes('"success":false'))).toBe(true);
+  });
+
+  it("ends on a done tool before maxSteps; done is not a world task", async () => {
+    const world = createWorld();
+    expect(world.describe().some((t) => t.name === "done")).toBe(false);
+    const provider = scriptedTools([[call("done", {}, "1")]]);
+    const res = await runAgent({ provider, prompt: "x", story: base, world, runId: "run-1", maxSteps: 10 });
+    expect(res.completed).toBe(true);
+    expect(res.commands.length).toBe(0);
+  });
+
+  it("returns an ok-discriminant result (no internal {success} envelope leaks)", async () => {
+    const provider = scriptedTools([[call("done", {}, "1")]]);
+    const res = await runAgent({ provider, prompt: "x", story: base, runId: "run-1", maxSteps: 10 });
+    expect("success" in res).toBe(false);
+    expect(typeof res.ok).toBe("boolean");
+    // verification reports plain data, not a {success} envelope
+    expect("success" in res.verification).toBe(false);
+  });
+});

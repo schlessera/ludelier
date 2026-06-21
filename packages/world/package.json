@@ -1,15 +1,14 @@
 {
-  "name": "@ludelier/cli",
+  "name": "@ludelier/world",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": {
-    "ludelier": "src/index.ts"
+  "exports": {
+    ".": "./src/index.ts"
   },
   "dependencies": {
-    "@ludelier/authoring": "workspace:*",
     "@ludelier/engine": "workspace:*",
     "@ludelier/schema": "workspace:*",
-    "@ludelier/world": "workspace:*"
+    "zod": "^4.0.0"
   }
 }

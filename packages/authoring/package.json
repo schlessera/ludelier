@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@ludelier/schema": "workspace:*"
+    "@ludelier/schema": "workspace:*",
+    "@ludelier/world": "workspace:*"
   }
 }
