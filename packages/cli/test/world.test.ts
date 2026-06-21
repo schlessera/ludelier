@@ -86,6 +86,12 @@ describe("author run", () => {
     if (savedO !== undefined) process.env.OPENAI_API_KEY = savedO;
     if (savedR !== undefined) process.env.OPENROUTER_API_KEY = savedR;
   });
+
+  it("rejects a non-numeric --max-steps with exit 2 before any provider call", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await run(["author", "run", "x", "--story", storyPath, "--max-steps", "abc"])).toBe(2);
+    expect(await run(["author", "run", "x", "--story", storyPath, "--max-steps", "0"])).toBe(2);
+  });
 });
 
 describe("parity guard (CLI surface == registry)", () => {

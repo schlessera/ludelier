@@ -106,17 +106,61 @@ describe("runAgent (hermetic, scripted provider)", () => {
   });
 
   it("feeds an invalid tool call's issues back, then recovers", async () => {
+    // node a has a self-jump at index 1 so rewire-goto can wire b in.
+    const story: Story = {
+      ...base,
+      nodes: [{ id: "a", body: [{ op: "say", who: "n", text: "hi" }, { op: "jump", goto: "a" }] }],
+      meta: { id: "t", title: "T", start: "a" },
+    };
     const provider = scriptedTools([
-      [call("create-node", { id: "bad id!" }, "1")], // rejected
+      [call("create-node", { id: "bad id!" }, "1")], // rejected (invalid id)
       [call("create-node", { id: "b" }, "2")],
-      [call("done", {}, "3")],
+      [call("append-end", { nodeId: "b" }, "3")],
+      [call("rewire-goto", { nodeId: "a", index: 1, goto: "b" }, "4")],
+      [call("done", {}, "5")],
     ]);
-    const res = await runAgent({ provider, prompt: "x", story: base, runId: "run-1", maxSteps: 10 });
+    const res = await runAgent({ provider, prompt: "x", story, runId: "run-1", maxSteps: 10 });
     expect(res.ok).toBe(true);
+    expect(res.completed).toBe(true);
     expect(res.story.nodes.some((n) => n.id === "b")).toBe(true);
     // a tool-result message carrying the failure was fed back
     const toolMsgs = res.transcript.filter((m) => m.role === "tool");
     expect(toolMsgs.some((m) => m.content.includes('"success":false'))).toBe(true);
+  });
+
+  it("feeds graph problems (unreachable/dead-end) back through `done`, then self-corrects", async () => {
+    const story: Story = {
+      ...base,
+      nodes: [{ id: "a", body: [{ op: "say", who: "n", text: "hi" }, { op: "jump", goto: "a" }] }],
+      meta: { id: "t", title: "T", start: "a" },
+    };
+    const provider = scriptedTools([
+      [call("create-node", { id: "b" }, "1")],
+      [call("append-end", { nodeId: "b" }, "2")], // b ends, but nothing points to it yet
+      [call("done", {}, "3")], // rejected: b is unreachable
+      [call("rewire-goto", { nodeId: "a", index: 1, goto: "b" }, "4")], // wire a -> b
+      [call("done", {}, "5")], // accepted
+    ]);
+    const res = await runAgent({ provider, prompt: "x", story, runId: "run-1", maxSteps: 10 });
+    expect(res.completed).toBe(true);
+    expect(res.ok).toBe(true);
+    expect(res.verification.unreachable).not.toContain("b");
+    // the first `done` was rejected with the reachability problem fed back to the model
+    const toolMsgs = res.transcript.filter((m) => m.role === "tool");
+    expect(toolMsgs.some((m) => m.content.includes("unreachable"))).toBe(true);
+  });
+
+  it("blocks completion when the run leaves a graph problem unfixed", async () => {
+    // base 'a' is clean; the run adds a dangling, end-less node and only ever calls done.
+    const provider = scriptedTools([
+      [call("create-node", { id: "b" }, "1")], // unreachable + dead end
+      [call("done", {}, "2")],
+    ]);
+    const res = await runAgent({ provider, prompt: "x", story: base, runId: "run-1", maxSteps: 4 });
+    expect(res.completed).toBe(false);
+    expect(res.ok).toBe(false);
+    expect(res.verification.unreachable).toContain("b");
+    expect(res.verification.deadEnds).toContain("b");
   });
 
   it("ends on a done tool before maxSteps; done is not a world task", async () => {
