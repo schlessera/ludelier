@@ -140,6 +140,29 @@ textarea {
   gap: 8px;
 }
 
+.chat .row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.chat .row > input {
+  flex: 1;
+}
+
+.chat .steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chat .steps input {
+  width: 64px;
+}
+
 .badge {
   font-size: 11px;
   padding: 2px 8px;
@@ -160,6 +183,68 @@ textarea {
 .err {
   color: var(--bad);
   font-size: 13px;
+}
+
+button.danger {
+  border-color: #5a2330;
+  color: #ff9aa2;
+}
+
+button.danger:hover:not(:disabled) {
+  border-color: var(--bad);
+}
+
+.feed {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  max-height: 280px;
+  overflow: auto;
+  background: #0d1117;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+.feed li {
+  padding: 2px 0;
+  border-bottom: 1px solid #1a2029;
+}
+
+.feed li:last-child {
+  border-bottom: none;
+}
+
+.ev-assistant {
+  color: var(--fg);
+  font-style: italic;
+}
+
+.ev-live {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.checkpoint {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: #131c2b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.checkpoint p {
+  margin: 0;
+  flex: 1;
 }
 
 .run {

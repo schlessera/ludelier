@@ -105,6 +105,7 @@ export function openAiCompatibleProvider(cfg: OpenAiCompatibleConfig): LLMProvid
           ...(cfg.headers ?? {}),
         },
         body: JSON.stringify(body),
+        signal: req.signal,
       });
 
       const json = (await res.json().catch(() => ({}))) as ChatCompletionResponse;
