@@ -8,7 +8,7 @@ import {
   type GraphReport,
 } from "@ludelier/world";
 import type { Issue, Story } from "@ludelier/schema";
-import type { ChatMessage, LLMProvider, ToolCall, ToolDefinition } from "./provider";
+import type { ChatMessage, CompletionResult, LLMProvider, ToolCall, ToolDefinition } from "./provider";
 import { worldTools, dispatch } from "./tools";
 
 export interface RunAgentOptions {
@@ -25,14 +25,45 @@ export interface RunAgentOptions {
    * When supplied, the run is measured against the log's *current* story, not `story`.
    */
   log?: EditLog;
-  /** Hard cap on provider turns before the loop stops (partial result). */
+  /**
+   * Optional ABSOLUTE hard cap on provider turns. There is no default — the loop runs until the
+   * agent finishes (a clean `done`), the caller interrupts (`signal`), or a checkpoint declines
+   * to continue. Used mainly by tests / non-interactive callers that want a deterministic bound.
+   */
   maxSteps?: number;
+  /**
+   * Pause every N turns and ask `onCheckpoint` whether to keep going — the safety net for a
+   * long autonomous run. Default 500.
+   */
+  checkpointEvery?: number;
+  /**
+   * Called at each checkpoint with the current step count; resolve `true` to continue, `false`
+   * to stop. If omitted, the run stops at the first checkpoint (safe default for non-interactive
+   * callers — they still get `checkpointEvery` turns).
+   */
+  onCheckpoint?: (step: number) => boolean | Promise<boolean>;
+  /** Interrupt the run between turns and abort the in-flight provider call. */
+  signal?: AbortSignal;
+  /** Progress callback fired as the run works — drives a live UI feed (see `AgentEvent`). */
+  onEvent?: (event: AgentEvent) => void;
   /** Caller-supplied run id; defaults to a generated one. Uniqueness is the caller's responsibility. */
   runId?: string;
   model?: string;
   temperature?: number;
   system?: string;
 }
+
+/** Why the run loop stopped. */
+export type StopReason = "completed" | "aborted" | "checkpoint" | "cap";
+
+/** A streamed progress event. The editor renders these as a live, human-readable work feed. */
+export type AgentEvent =
+  | { kind: "turn"; step: number }
+  | { kind: "assistant"; text: string }
+  | { kind: "edit"; command: string; params: unknown; success: boolean; issues: Issue[] }
+  | { kind: "query"; task: string; success: boolean }
+  | { kind: "verify"; clean: boolean; problems: string[] }
+  | { kind: "stop"; reason: StopReason };
 
 /** Self-verification report — plain data (no `{success}` envelope leaks across the boundary). */
 export interface Verification {
@@ -48,8 +79,9 @@ export interface Verification {
  * `success → ok` conversion point, KTD-5) and now means **clean**: Zod-valid *and* the
  * run introduced no new unreachable / dead-end nodes (graph health, not just validity).
  * The `log` is returned so the caller can keep the run or `revertRun(runId)` it;
- * `completed` distinguishes a run the agent verified clean from a `maxSteps`-truncated or
- * still-broken partial one (whose records remain committed — KTD-11).
+ * `completed` distinguishes a run the agent verified clean from an interrupted, stalled, or
+ * still-broken partial one (whose records remain committed — KTD-11). `aborted` flags a
+ * caller interruption; `stopReason` says exactly why the loop ended.
  */
 export interface AgentRunResult {
   ok: boolean;
@@ -60,6 +92,8 @@ export interface AgentRunResult {
   verification: Verification;
   transcript: ChatMessage[];
   completed: boolean;
+  aborted: boolean;
+  stopReason: StopReason;
   log: EditLog;
 }
 
@@ -109,12 +143,17 @@ function agentSystemPrompt(world: Registry): string {
     "",
     "Work in this order:",
     "1. Inspect first — use graph, get-node, and the list-* tools to understand the story before editing.",
-    "2. Make your edits with the manipulate tools.",
-    "3. Keep the graph healthy: every node you create must be reachable from the start node (wire it in",
-    "   with rewire-goto, or add a choice option / jump that targets it) and must not be a dead end",
-    "   (give an ending node an `end` statement; give a transit node a jump or choice out).",
-    "4. Never remove an existing `end` statement unless you immediately replace it.",
-    "5. Before finishing, run the `graph` tool and confirm `unreachable` is empty and you introduced no",
+    "2. Build depth-first and complete one node at a time: create a node, immediately give it its",
+    "   statements (say/choice/end), and wire it in (rewire-goto, or a choice/jump that targets it) —",
+    "   THEN move to the next node. Do NOT create empty placeholder nodes you will fill later: an empty",
+    "   node is both a dead end and (until wired) unreachable, and if the run is cut short it is left",
+    "   broken. Finishing fewer branches completely beats sketching many incompletely.",
+    "3. Batch related edits in a single turn — you may emit several tool calls at once. Prefer that: it",
+    "   is faster and leaves fewer half-built states between turns.",
+    "4. Keep the graph healthy: every node you create must be reachable from the start node and must not",
+    "   be a dead end (an ending node needs an `end`; a transit node needs a jump or choice out).",
+    "5. Never remove an existing `end` statement unless you immediately replace it.",
+    "6. Before finishing, run the `graph` tool and confirm `unreachable` is empty and you introduced no",
     "   new dead ends. Only then call the `done` tool.",
     "",
     "The `done` tool is a gate: if your edits left a new unreachable or dead-end node it is rejected",
@@ -153,7 +192,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   const world = opts.world ?? createWorld();
   const log = opts.log ?? new EditLog(world, opts.story);
   const runId = opts.runId ?? defaultRunId();
-  const maxSteps = opts.maxSteps ?? 24;
+  const hardCap = opts.maxSteps; // optional absolute bound (no default)
+  const checkpointEvery = opts.checkpointEvery ?? 500;
+  const emit = opts.onEvent ?? ((): void => {});
   const tools = [...worldTools(world), DONE_TOOL];
 
   // Measure against the log's current story (== opts.story for a fresh log) so an injected
@@ -168,27 +209,67 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     { role: "user", content: opts.prompt },
   ];
 
+  // The loop runs until the agent finishes (clean `done`), the caller interrupts (`signal`), an
+  // absolute `maxSteps` cap is hit, or a periodic checkpoint declines to continue. There is no
+  // step budget on a healthy run — the human watches the streamed events and interrupts if needed.
   let completed = false;
-  for (let step = 0; step < maxSteps && !completed; step++) {
-    const completion = await opts.provider.complete({
-      messages: [...transcript],
-      model: opts.model,
-      temperature: opts.temperature,
-      tools,
-    });
+  let aborted = false;
+  let declined = false;
+  let step = 0;
+  for (; ; step++) {
+    if (hardCap !== undefined && step >= hardCap) break;
+    if (opts.signal?.aborted) {
+      aborted = true;
+      break;
+    }
+    // Safety net: every `checkpointEvery` turns, ask whether to keep going.
+    if (step > 0 && step % checkpointEvery === 0) {
+      const cont = opts.onCheckpoint ? await opts.onCheckpoint(step) : false;
+      if (!cont) {
+        declined = true;
+        break;
+      }
+    }
+
+    emit({ kind: "turn", step });
+    let completion: CompletionResult;
+    try {
+      completion = await opts.provider.complete({
+        messages: [...transcript],
+        model: opts.model,
+        temperature: opts.temperature,
+        tools,
+        signal: opts.signal,
+      });
+    } catch (err) {
+      if (opts.signal?.aborted) {
+        aborted = true;
+        break;
+      }
+      throw err;
+    }
+    if (opts.signal?.aborted) {
+      aborted = true;
+      break;
+    }
     const calls: ToolCall[] = completion.toolCalls ?? [];
     transcript.push({
       role: "assistant",
       content: completion.text,
       ...(calls.length > 0 ? { toolCalls: calls } : {}),
     });
+    if (completion.text) emit({ kind: "assistant", text: completion.text });
 
     // The model stopped calling tools: treat as an implicit completion request, but only
     // accept it if the run is clean — otherwise feed the graph problems back and continue.
     if (calls.length === 0) {
       const gate = gateNow();
-      if (gate.clean) completed = true;
-      else transcript.push({ role: "user", content: completionFeedback(gate) });
+      emit({ kind: "verify", clean: gate.clean, problems: gate.problems });
+      if (gate.clean) {
+        completed = true;
+        break;
+      }
+      transcript.push({ role: "user", content: completionFeedback(gate) });
       continue;
     }
 
@@ -197,6 +278,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
         // `done` is a self-verification gate: accept only a clean run; otherwise return the
         // introduced unreachable / dead-end / validity issues so the model self-corrects.
         const gate = gateNow();
+        emit({ kind: "verify", clean: gate.clean, problems: gate.problems });
         if (gate.clean) completed = true;
         transcript.push({
           role: "tool",
@@ -207,13 +289,36 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
       }
       const result = dispatch(world, log, runId, c);
       transcript.push({ role: "tool", content: JSON.stringify(result), toolCallId: c.id });
+      if (world.get(c.name)?.kind === "understand") {
+        emit({ kind: "query", task: c.name, success: result.success });
+      } else {
+        emit({
+          kind: "edit",
+          command: c.name,
+          params: c.arguments,
+          success: result.success,
+          issues: result.success ? [] : result.issues,
+        });
+      }
     }
+    if (completed) break;
   }
+
+  const stopReason: StopReason = completed
+    ? "completed"
+    : aborted
+      ? "aborted"
+      : declined
+        ? "checkpoint"
+        : "cap";
+  emit({ kind: "stop", reason: stopReason });
 
   const story = log.currentStory();
   const verification = verify(world, story);
   return {
     ok: describeGate(baseline, verification).clean,
+    aborted,
+    stopReason,
     story,
     runId,
     commands: log.recordsView().filter((r) => r.runId === runId),

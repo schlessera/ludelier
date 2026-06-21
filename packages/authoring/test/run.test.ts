@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createWorld, applyEdit, hashStory } from "@ludelier/world";
 import { validateStory, type Story } from "@ludelier/schema";
 import { runAgent } from "../src/run";
+import type { AgentEvent } from "../src/run";
 import type { LLMProvider, ToolCall } from "../src/provider";
 
 const base: Story = {
@@ -10,6 +11,26 @@ const base: Story = {
   assets: [],
   nodes: [{ id: "a", body: [{ op: "say", who: "n", text: "hi" }, { op: "end" }] }],
 };
+
+/** Story whose start node self-loops with no end — a pre-existing dead end (baseline). */
+const selfLoop: Story = {
+  ...base,
+  nodes: [{ id: "a", body: [{ op: "say", who: "n", text: "hi" }, { op: "jump", goto: "a" }] }],
+  meta: { id: "t", title: "T", start: "a" },
+};
+
+/** A provider that emits a fresh create-node every turn and never completes. */
+function endlessEditor(): LLMProvider {
+  let i = 0;
+  return {
+    id: "endless",
+    capabilities: { jsonSchema: false, tools: true },
+    async complete() {
+      const id = `n${i++}`;
+      return { text: "", model: "endless", toolCalls: [{ id: `c${i}`, name: "create-node", arguments: { id } }] };
+    },
+  };
+}
 
 type Step = ToolCall[] | { text: string };
 
@@ -179,5 +200,83 @@ describe("runAgent (hermetic, scripted provider)", () => {
     expect(typeof res.ok).toBe("boolean");
     // verification reports plain data, not a {success} envelope
     expect("success" in res.verification).toBe(false);
+  });
+
+  it("streams progress events ending in a terminal stop", async () => {
+    const events: AgentEvent[] = [];
+    const provider = scriptedTools([
+      [call("create-node", { id: "b" }, "1")],
+      [call("append-end", { nodeId: "b" }, "2")],
+      [call("rewire-goto", { nodeId: "a", index: 1, goto: "b" }, "3")],
+      [call("done", {}, "4")],
+    ]);
+    const res = await runAgent({ provider, prompt: "x", story: selfLoop, runId: "run-1", onEvent: (e) => events.push(e) });
+    expect(res.stopReason).toBe("completed");
+    expect(events.some((e) => e.kind === "edit" && e.command === "create-node" && e.success)).toBe(true);
+    expect(events.some((e) => e.kind === "verify" && e.clean)).toBe(true);
+    expect(events.at(-1)).toEqual({ kind: "stop", reason: "completed" });
+  });
+
+  it("can be interrupted mid-run via an abort signal", async () => {
+    const ac = new AbortController();
+    const res = await runAgent({
+      provider: endlessEditor(),
+      prompt: "go forever",
+      story: base,
+      runId: "run-1",
+      maxSteps: 50, // backstop so a broken abort can't hang the test
+      signal: ac.signal,
+      onEvent: (e) => {
+        if (e.kind === "turn" && e.step === 3) ac.abort();
+      },
+    });
+    expect(res.aborted).toBe(true);
+    expect(res.stopReason).toBe("aborted");
+    expect(res.completed).toBe(false);
+    expect(res.commands.length).toBeLessThan(10);
+  });
+
+  it("pauses at a checkpoint and stops when the caller declines", async () => {
+    let asked = 0;
+    const res = await runAgent({
+      provider: endlessEditor(),
+      prompt: "go",
+      story: base,
+      runId: "run-1",
+      checkpointEvery: 2,
+      onCheckpoint: () => {
+        asked++;
+        return false;
+      },
+      maxSteps: 50,
+    });
+    expect(asked).toBe(1);
+    expect(res.stopReason).toBe("checkpoint");
+    expect(res.completed).toBe(false);
+    expect(res.commands.length).toBe(2); // steps 0 and 1 ran before the step-2 checkpoint
+  });
+
+  it("continues past a checkpoint the caller approves", async () => {
+    let asked = 0;
+    const provider = scriptedTools([
+      [call("create-node", { id: "b" }, "1")],
+      [call("append-end", { nodeId: "b" }, "2")],
+      [call("rewire-goto", { nodeId: "a", index: 1, goto: "b" }, "3")],
+      [call("done", {}, "4")],
+    ]);
+    const res = await runAgent({
+      provider,
+      prompt: "x",
+      story: selfLoop,
+      runId: "run-1",
+      checkpointEvery: 2,
+      onCheckpoint: () => {
+        asked++;
+        return true;
+      },
+    });
+    expect(asked).toBe(1); // checkpoint at step 2, approved → run continues to completion
+    expect(res.stopReason).toBe("completed");
+    expect(res.completed).toBe(true);
   });
 });

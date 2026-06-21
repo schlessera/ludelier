@@ -156,7 +156,22 @@ async function runAuthor(rest: string[]): Promise<number> {
   }
 
   const story = loadStory(values.story);
-  const res = await runAgent({ provider, prompt, story, maxSteps });
+  // Stream progress to stderr (the run is otherwise opaque); Ctrl-C aborts via the signal.
+  const ac = new AbortController();
+  const onSigint = (): void => ac.abort();
+  process.once("SIGINT", onSigint);
+  const res = await runAgent({
+    provider,
+    prompt,
+    story,
+    maxSteps,
+    signal: ac.signal,
+    onEvent: (e) => {
+      if (e.kind === "edit") console.error(`  ${e.success ? "+" : "✗"} ${e.command} ${JSON.stringify(e.params)}`);
+      else if (e.kind === "verify" && !e.clean) console.error(`  ⚠ ${e.problems.join("; ")}`);
+    },
+  });
+  process.removeListener("SIGINT", onSigint);
   writeOut(JSON.stringify(res.story, null, 2), values.out);
   if (values.log) writeFileSync(values.log, res.log.export());
   const v = res.verification;
@@ -165,7 +180,7 @@ async function runAuthor(rest: string[]): Promise<number> {
       ? ` unreachable=[${v.unreachable.join(",")}] deadEnds=[${v.deadEnds.join(",")}]`
       : "";
   console.error(
-    `run ${res.runId}: ${res.commands.length} command(s), ok=${res.ok}, valid=${v.valid}, completed=${res.completed}${graphNote}`,
+    `run ${res.runId}: ${res.commands.length} command(s), ok=${res.ok}, valid=${v.valid}, stop=${res.stopReason}${graphNote}`,
   );
   return res.ok ? 0 : 1;
 }

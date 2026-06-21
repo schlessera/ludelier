@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { EditorSession } from "@ludelier/editor-core";
-import type { EditorSnapshot } from "@ludelier/editor-core";
+import type { EditorSnapshot, AgentEvent, AgentRunResult } from "@ludelier/editor-core";
 import { validateStory } from "@ludelier/schema";
 import { openRouterProvider } from "@ludelier/authoring";
-import type { AgentRunResult } from "@ludelier/authoring";
 import { PlayCanvas } from "./PlayCanvas";
 import cafeStory from "../../../examples/cafe.story.json";
 
@@ -86,13 +85,61 @@ function Toolbar({ session, snap }: { session: EditorSession; snap: EditorSnapsh
   );
 }
 
+/** A streamed event rendered as one human-readable feed line. */
+function FeedLine({ e }: { e: AgentEvent }): JSX.Element | null {
+  if (e.kind === "turn") return null; // tracked as a counter, not shown per-line
+  if (e.kind === "assistant") return <li className="ev-assistant">{e.text}</li>;
+  if (e.kind === "query") {
+    return (
+      <li className="ev-query muted">
+        🔍 <code>{e.task}</code>
+      </li>
+    );
+  }
+  if (e.kind === "edit") {
+    return (
+      <li className={e.success ? "ev-edit" : "ev-edit bad"}>
+        {e.success ? "✏️" : "✕"} <code>{e.command}</code>{" "}
+        <span className="muted">{summarizeParams(e.params)}</span>
+        {!e.success && e.issues.length > 0 && <span className="err"> — {e.issues[0]?.message}</span>}
+      </li>
+    );
+  }
+  if (e.kind === "verify") {
+    return e.clean ? (
+      <li className="ev-verify ok">✓ verified clean</li>
+    ) : (
+      <li className="ev-verify bad">⚠ {e.problems.join("; ")}</li>
+    );
+  }
+  return <li className="ev-stop muted">■ {e.reason}</li>;
+}
+
 function ChatPanel({ session }: { session: EditorSession }): JSX.Element {
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("openai/gpt-5-mini");
-  const [prompt, setPrompt] = useState("Add a new secret ending and wire it in from an existing choice.");
+  const [prompt, setPrompt] = useState("Add a full branching discussion about careers.");
   const [running, setRunning] = useState(false);
+  const [events, setEvents] = useState<AgentEvent[]>([]);
+  const [step, setStep] = useState(0);
   const [result, setResult] = useState<AgentRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [checkpointStep, setCheckpointStep] = useState<number | null>(null);
+
+  const abortRef = useRef<AbortController | null>(null);
+  const checkpointResolve = useRef<((cont: boolean) => void) | null>(null);
+  const feedRef = useRef<HTMLUListElement>(null);
+
+  // Keep the live feed scrolled to the newest event.
+  useEffect(() => {
+    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
+  }, [events]);
+
+  function answerCheckpoint(cont: boolean): void {
+    setCheckpointStep(null);
+    checkpointResolve.current?.(cont);
+    checkpointResolve.current = null;
+  }
 
   async function onSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -100,8 +147,13 @@ function ChatPanel({ session }: { session: EditorSession }): JSX.Element {
       setError("Paste an OpenRouter API key (BYOK).");
       return;
     }
+    const ac = new AbortController();
+    abortRef.current = ac;
     setRunning(true);
     setError(null);
+    setResult(null);
+    setEvents([]);
+    setStep(0);
     try {
       const provider = openRouterProvider({
         apiKey: apiKey.trim(),
@@ -109,12 +161,27 @@ function ChatPanel({ session }: { session: EditorSession }): JSX.Element {
         appName: "Ludelier Editor",
         appUrl: location.origin,
       });
-      const res = await session.chat(prompt, { provider, model, runId: `chat-${Date.now()}` });
+      const res = await session.chat(prompt, {
+        provider,
+        model,
+        runId: `chat-${Date.now()}`,
+        signal: ac.signal,
+        onEvent: (ev) => {
+          if (ev.kind === "turn") setStep(ev.step + 1);
+          else setEvents((prev) => [...prev, ev]);
+        },
+        onCheckpoint: (s) =>
+          new Promise<boolean>((resolve) => {
+            setCheckpointStep(s);
+            checkpointResolve.current = resolve;
+          }),
+      });
       setResult(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setRunning(false);
+      abortRef.current = null;
     }
   }
 
@@ -129,18 +196,43 @@ function ChatPanel({ session }: { session: EditorSession }): JSX.Element {
           onChange={(e) => setApiKey(e.target.value)}
         />
         <input placeholder="model slug" value={model} onChange={(e) => setModel(e.target.value)} />
-        <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-        <button type="submit" disabled={running}>
-          {running ? "Running…" : "Send"}
-        </button>
+        <textarea rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} disabled={running} />
+        {running ? (
+          <button type="button" className="danger" onClick={() => abortRef.current?.abort()}>
+            ✕ Interrupt {step > 0 ? `(turn ${step})` : ""}
+          </button>
+        ) : (
+          <button type="submit">Send</button>
+        )}
       </form>
+
       {error && <p className="err">{error}</p>}
+
+      {checkpointStep !== null && (
+        <div className="checkpoint">
+          <p>Ran {checkpointStep} turns. Keep going?</p>
+          <button onClick={() => answerCheckpoint(true)}>Continue</button>
+          <button className="danger" onClick={() => answerCheckpoint(false)}>
+            Stop
+          </button>
+        </div>
+      )}
+
+      {(running || events.length > 0) && (
+        <ul className="feed" ref={feedRef}>
+          {events.map((ev, i) => (
+            <FeedLine key={i} e={ev} />
+          ))}
+          {running && <li className="ev-live muted">… working (turn {step})</li>}
+        </ul>
+      )}
+
       {result && (
         <div className="run">
           <p>
-            run <code>{result.runId.slice(0, 8)}</code> · {result.commands.length} edit(s) ·{" "}
+            {result.commands.length} edit(s) ·{" "}
             <span className={result.ok ? "ok" : "bad"}>{result.ok ? "clean" : "not clean"}</span> ·{" "}
-            {result.completed ? "completed" : "incomplete"}
+            {result.stopReason}
           </p>
           {(result.verification.unreachable.length > 0 || result.verification.deadEnds.length > 0) && (
             <p className="err">
@@ -148,18 +240,22 @@ function ChatPanel({ session }: { session: EditorSession }): JSX.Element {
               {result.verification.deadEnds.join(", ")}]
             </p>
           )}
-          <ul className="cmds">
-            {result.commands.map((c) => (
-              <li key={c.seq}>
-                <code>{c.command}</code> {JSON.stringify(c.params)}
-              </li>
-            ))}
-          </ul>
-          <button onClick={() => session.revertRun(result.runId)}>Revert this run</button>
+          {result.commands.length > 0 && (
+            <button onClick={() => session.revertRun(result.runId)}>Revert this run</button>
+          )}
         </div>
       )}
     </section>
   );
+}
+
+/** Compact one-line summary of an edit command's params for the live feed. */
+function summarizeParams(params: unknown): string {
+  if (!params || typeof params !== "object") return "";
+  const p = params as Record<string, unknown>;
+  if (typeof p.id === "string") return p.id;
+  if (typeof p.nodeId === "string") return String(p.nodeId);
+  return JSON.stringify(p).slice(0, 60);
 }
 
 function StoryInspector({ snap }: { snap: EditorSnapshot }): JSX.Element {

@@ -13,21 +13,29 @@ import {
   type StoryDiff,
 } from "@ludelier/world";
 import { validateStory, type Story, type Issue } from "@ludelier/schema";
-import { runAgent, type AgentRunResult, type LLMProvider } from "@ludelier/authoring";
+import { runAgent, type AgentRunResult, type AgentEvent, type LLMProvider } from "@ludelier/authoring";
+
+export type { AgentEvent, StopReason, AgentRunResult } from "@ludelier/authoring";
 
 /**
  * Options for an agent chat turn. The provider is BYOK (caller-supplied); everything else
  * mirrors `runAgent` but the story + log are bound to this session (so chat edits join the
- * session history and are undoable / revertable).
+ * session history and are undoable / revertable). The run streams progress via `onEvent`, can
+ * be interrupted via `signal`, and pauses every `checkpointEvery` turns to ask `onCheckpoint`.
  */
 export interface ChatOptions {
   provider: LLMProvider;
   model?: string;
-  maxSteps?: number;
   temperature?: number;
   /** Run id for this chat turn (groups its records for `revertRun`). Defaults to a generated one. */
   runId?: string;
   system?: string;
+  /** Absolute hard cap on turns (optional; the run is otherwise bounded by interrupt/checkpoint). */
+  maxSteps?: number;
+  checkpointEvery?: number;
+  onCheckpoint?: (step: number) => boolean | Promise<boolean>;
+  signal?: AbortSignal;
+  onEvent?: (event: AgentEvent) => void;
 }
 
 /** A read-only view of the session state — what a UI renders and re-renders on `change`. */
@@ -180,6 +188,10 @@ export class EditorSession {
       log: this.log,
       model: opts.model,
       maxSteps: opts.maxSteps,
+      checkpointEvery: opts.checkpointEvery,
+      onCheckpoint: opts.onCheckpoint,
+      signal: opts.signal,
+      onEvent: opts.onEvent,
       temperature: opts.temperature,
       runId: opts.runId,
       system: opts.system,

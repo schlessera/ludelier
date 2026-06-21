@@ -44,6 +44,8 @@ export interface CompletionRequest {
   jsonSchema?: JsonSchemaSpec;
   /** When set and `capabilities.tools` is true, offer these tools to the model. */
   tools?: ToolDefinition[];
+  /** Abort the in-flight request (the agent loop uses this for user interruption). */
+  signal?: AbortSignal;
 }
 
 export interface CompletionResult {
