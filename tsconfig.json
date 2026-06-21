@@ -18,7 +18,8 @@
       "@ludelier/engine": ["packages/engine/src/index.ts"],
       "@ludelier/world": ["packages/world/src/index.ts"],
       "@ludelier/renderer-pixi": ["packages/renderer-pixi/src/index.ts"],
-      "@ludelier/authoring": ["packages/authoring/src/index.ts"]
+      "@ludelier/authoring": ["packages/authoring/src/index.ts"],
+      "@ludelier/editor-core": ["packages/editor-core/src/index.ts"]
     }
   },
   "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "vitest.config.ts"]
