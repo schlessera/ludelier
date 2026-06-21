@@ -144,8 +144,13 @@ async function runAuthor(rest: string[]): Promise<number> {
   const res = await runAgent({ provider, prompt, story });
   writeOut(JSON.stringify(res.story, null, 2), values.out);
   if (values.log) writeFileSync(values.log, res.log.export());
+  const v = res.verification;
+  const graphNote =
+    v.unreachable.length || v.deadEnds.length
+      ? ` unreachable=[${v.unreachable.join(",")}] deadEnds=[${v.deadEnds.join(",")}]`
+      : "";
   console.error(
-    `run ${res.runId}: ${res.commands.length} command(s), valid=${res.verification.valid}, completed=${res.completed}`,
+    `run ${res.runId}: ${res.commands.length} command(s), ok=${res.ok}, valid=${v.valid}, completed=${res.completed}${graphNote}`,
   );
   return res.ok ? 0 : 1;
 }
