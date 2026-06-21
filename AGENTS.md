@@ -33,9 +33,18 @@ packages/
   engine/   @ludelier/engine — pure deterministic core. Redux-style reducer,
             seeded RNG (rng.ts), stable-key hash (hash.ts), headless Simulation
             runner + JSONL trace record/replay (simulation.ts). No engine/DOM deps.
-  cli/      @ludelier/cli — the agent harness. `validate | simulate | replay`.
+  world/    @ludelier/world — the agent world API (pure; no LLM/DOM). Self-describing
+            task registry → describe() manifest; understand tasks (validate, graph,
+            list-*, get-node, find-references, simulate, diff) + manipulate spine
+            (create/delete-node, set-meta, add-character, register-asset,
+            append-{say,show,choice,jump,end}, remove-statement, rewire-goto) through
+            an always-valid applyEdit; event-sourced EditLog (fold/undo/redo/revert-run,
+            JSONL). {success} result envelope; canonical hashStory.
+  cli/      @ludelier/cli — the agent harness. `validate | simulate | replay` +
+            registry-derived `world describe|query|edit|undo|redo|export` + `author run`.
   authoring/ @ludelier/authoring — P2 AI authoring: `LLMProvider` seam (OpenAI +
-            OpenRouter) + `generateStory()` self-correction loop. Grows into the agent world API.
+            OpenRouter, with tool-calling) + `generateStory()` self-correction loop +
+            the agent loop (worldTools/dispatch tool adapter + autonomous `runAgent`).
   renderer-pixi/ @ludelier/renderer-pixi — display-only PixiJS v8 renderer
             (cover-fit background, character sprites, dialog/choices, crossfades). No game logic.
   runtime-web/   @ludelier/runtime-web — Vite + vite-plugin-pwa browser player.
@@ -46,7 +55,7 @@ examples/   cafe.story.json + cafe.actions.json (sample VN).
 .github/    release.yml (Version-PR flow) + changeset-check.yml (PR gate).
 ```
 
-Internal deps use `workspace:*` (`engine` → `schema`, `cli` → both, `renderer-pixi` → `engine`, `runtime-web` → all).
+Internal deps use `workspace:*` (`engine` → `schema`; `world` → `schema` + `engine`; `authoring` → `schema` + `world`; `cli` → `schema` + `engine` + `world` + `authoring`; `renderer-pixi` → `engine`; `runtime-web` → all).
 
 ## Commands
 
