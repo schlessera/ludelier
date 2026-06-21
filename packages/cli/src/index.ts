@@ -93,7 +93,10 @@ function runWorld(rest: string[]): number {
     }
     case "edit": {
       const name = positionals[1];
-      if (!name || !world.get(name)) throw new CliError(`unknown manipulate command "${name ?? ""}"`, 2);
+      const task = name ? world.get(name) : undefined;
+      if (!name || !task || task.kind !== "manipulate") {
+        throw new CliError(`unknown manipulate command "${name ?? ""}"`, 2);
+      }
       const log = loadLog(world, values.story, values.log);
       const res = log.apply(name, args, { runId: "cli" });
       if (!res.success) return printIssues(res.issues);
