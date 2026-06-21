@@ -44,7 +44,12 @@ packages/
             registry-derived `world describe|query|edit|undo|redo|export` + `author run`.
   authoring/ @ludelier/authoring — P2 AI authoring: `LLMProvider` seam (OpenAI +
             OpenRouter, with tool-calling) + `generateStory()` self-correction loop +
-            the agent loop (worldTools/dispatch tool adapter + autonomous `runAgent`).
+            the agent loop (worldTools/dispatch tool adapter + autonomous `runAgent`,
+            graph-health self-correction gate, injectable edit `log`).
+  editor-core/ @ludelier/editor-core — the editor's headless session façade (pure; no DOM).
+            `EditorSession`: owns the Story as an EditLog, `query` (understand) + `edit`
+            (manipulate) + undo/redo/revertRun + `change` events + exportLog/fromLog, and an
+            agent `chat` loop bound to the session log. The parity surface the React shell binds to.
   renderer-pixi/ @ludelier/renderer-pixi — display-only PixiJS v8 renderer
             (cover-fit background, character sprites, dialog/choices, crossfades). No game logic.
   runtime-web/   @ludelier/runtime-web — Vite + vite-plugin-pwa browser player.
@@ -55,7 +60,7 @@ examples/   cafe.story.json + cafe.actions.json (sample VN).
 .github/    release.yml (Version-PR flow) + changeset-check.yml (PR gate).
 ```
 
-Internal deps use `workspace:*` (`engine` → `schema`; `world` → `schema` + `engine`; `authoring` → `schema` + `world`; `cli` → `schema` + `engine` + `world` + `authoring`; `renderer-pixi` → `engine`; `runtime-web` → all).
+Internal deps use `workspace:*` (`engine` → `schema`; `world` → `schema` + `engine`; `authoring` → `schema` + `world`; `editor-core` → `schema` + `world` + `authoring`; `cli` → `schema` + `engine` + `world` + `authoring`; `renderer-pixi` → `engine`; `runtime-web` → all).
 
 ## Commands
 

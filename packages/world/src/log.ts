@@ -57,6 +57,16 @@ export class EditLog {
     return res;
   }
 
+  /** Whether there is an active record to undo (head > 0). */
+  canUndo(): boolean {
+    return this.head > 0;
+  }
+
+  /** Whether there is an undone record to redo (an orphaned tail past the head). */
+  canRedo(): boolean {
+    return this.head < this.records.length;
+  }
+
   undo(): Story {
     if (this.head > 0) this.head--;
     return this.currentStory();

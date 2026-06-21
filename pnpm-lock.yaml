@@ -51,6 +51,18 @@ importers:
         specifier: workspace:*
         version: link:../world
 
+  packages/editor-core:
+    dependencies:
+      '@ludelier/authoring':
+        specifier: workspace:*
+        version: link:../authoring
+      '@ludelier/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@ludelier/world':
+        specifier: workspace:*
+        version: link:../world
+
   packages/engine:
     dependencies:
       '@ludelier/schema':

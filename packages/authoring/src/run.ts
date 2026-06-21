@@ -19,6 +19,12 @@ export interface RunAgentOptions {
   story: Story;
   /** A world registry; defaults to a fresh `createWorld()`. */
   world?: Registry;
+  /**
+   * An existing edit log to append this run onto (e.g. an editor session's history) so the
+   * run's records join that history and stay undoable. Defaults to a fresh log over `story`.
+   * When supplied, the run is measured against the log's *current* story, not `story`.
+   */
+  log?: EditLog;
   /** Hard cap on provider turns before the loop stops (partial result). */
   maxSteps?: number;
   /** Caller-supplied run id; defaults to a generated one. Uniqueness is the caller's responsibility. */
@@ -145,13 +151,16 @@ function verify(world: Registry, story: Story): Verification {
  */
 export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   const world = opts.world ?? createWorld();
-  const log = new EditLog(world, opts.story);
+  const log = opts.log ?? new EditLog(world, opts.story);
   const runId = opts.runId ?? defaultRunId();
   const maxSteps = opts.maxSteps ?? 24;
   const tools = [...worldTools(world), DONE_TOOL];
 
+  // Measure against the log's current story (== opts.story for a fresh log) so an injected
+  // session log diffs/verifies relative to the pre-run state, not the log's original base.
+  const preRunStory = log.currentStory();
   // Pre-run baseline: the agent is only held to problems *it* introduces (describeGate).
-  const baseline = verify(world, opts.story);
+  const baseline = verify(world, preRunStory);
   const gateNow = (): Gate => describeGate(baseline, verify(world, log.currentStory()));
 
   const transcript: ChatMessage[] = [
@@ -207,8 +216,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     ok: describeGate(baseline, verification).clean,
     story,
     runId,
-    commands: log.recordsView(),
-    diff: diffStories(opts.story, story),
+    commands: log.recordsView().filter((r) => r.runId === runId),
+    diff: diffStories(preRunStory, story),
     verification,
     transcript,
     completed,
