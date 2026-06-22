@@ -37,6 +37,14 @@ function crossRefIssues(story: Story): Issue[] {
   }
 
   for (const node of story.nodes) {
+    // A terminal statement (end / jump) ends the node; nothing may follow it (dead code).
+    const term = node.body.findIndex((s) => s.op === "end" || s.op === "jump");
+    if (term !== -1 && term < node.body.length - 1) {
+      issues.push({
+        path: `nodes.${node.id}.body[${term + 1}]`,
+        message: `statement follows a terminal "${node.body[term]!.op}" in node "${node.id}" — nothing runs after it`,
+      });
+    }
     node.body.forEach((stmt, i) => {
       const at = `nodes.${node.id}.body[${i}]`;
       if (stmt.op === "jump" && !ids.has(stmt.goto)) {
