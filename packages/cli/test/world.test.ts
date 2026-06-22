@@ -10,7 +10,8 @@ const baseStory = {
   meta: { id: "t", title: "T", start: "a" },
   characters: [{ id: "n", name: "N" }],
   assets: [],
-  nodes: [{ id: "a", body: [{ op: "say", who: "n", text: "hi" }, { op: "end" }] }],
+  // node a has no terminal, so the append-* edit tests don't orphan statements after an end.
+  nodes: [{ id: "a", body: [{ op: "say", who: "n", text: "hi" }] }],
 };
 
 let dir: string;
@@ -68,7 +69,8 @@ describe("world subcommands", () => {
     const outPath = join(dir, "out.json");
     expect(await run(["world", "undo", "--story", storyPath, "--log", logPath, "-o", outPath])).toBe(0);
     const out = JSON.parse(readFileSync(outPath, "utf8"));
-    expect(out.nodes.find((n: { id: string }) => n.id === "a").body).toHaveLength(2);
+    // base node a is [say]; append-end made it [say, end]; undo restores [say].
+    expect(out.nodes.find((n: { id: string }) => n.id === "a").body).toHaveLength(1);
     expect(readFileSync(logPath, "utf8").trim()).toBe("");
   });
 });

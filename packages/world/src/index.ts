@@ -29,6 +29,9 @@ import {
   appendChoiceTask,
   appendJumpTask,
   appendEndTask,
+  insertSayTask,
+  insertShowTask,
+  insertChoiceTask,
 } from "./manipulate/statements";
 
 /**
@@ -62,6 +65,9 @@ export function createWorld(): Registry {
   world.register(appendChoiceTask);
   world.register(appendJumpTask);
   world.register(appendEndTask);
+  world.register(insertSayTask);
+  world.register(insertShowTask);
+  world.register(insertChoiceTask);
   return world;
 }
 

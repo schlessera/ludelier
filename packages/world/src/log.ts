@@ -3,7 +3,7 @@ import type { Registry } from "./registry";
 import { applyEdit, validateWorld } from "./applyEdit";
 import { fail, ok, type Result } from "./result";
 import { normalizeStatementIds, nextStatementId } from "./statement-id";
-import { STATEMENT_APPEND_COMMANDS } from "./manipulate/statements";
+import { STATEMENT_CREATE_COMMANDS } from "./manipulate/statements";
 
 /**
  * One event in the authoring history. The canonical fold uses only these fields —
@@ -57,7 +57,7 @@ export class EditLog {
     // record already carries its id, so we never overwrite one.
     const seq = this.head;
     let finalParams = params;
-    if (STATEMENT_APPEND_COMMANDS.has(command) && (params as { id?: unknown }).id === undefined) {
+    if (STATEMENT_CREATE_COMMANDS.has(command) && (params as { id?: unknown }).id === undefined) {
       finalParams = { ...(params as Record<string, unknown>), id: nextStatementId(seq) };
     }
     const res = applyEdit(this.world, this.currentStory(), command, finalParams);
