@@ -1,4 +1,5 @@
 import { StoryObject, type Story } from "@ludelier/schema";
+import { fnv1a64 } from "@ludelier/engine";
 
 /**
  * Stable, key-sorted JSON serialisation — two structurally-equal values serialise
@@ -35,13 +36,11 @@ export function canonicalStory(story: Story): string {
   return stable(StoryObject.parse(story));
 }
 
-/** FNV-1a 32-bit hex hash of the canonical Story form. Stable across runs and platforms. */
+/**
+ * Stable 64-bit hex hash of the canonical Story form (shares the engine's `fnv1a64`
+ * so there is one hash implementation — no 32-vs-64-bit drift between the two). Used
+ * as a content identity, so 64 bits matter (see `fnv1a64`).
+ */
 export function hashStory(story: Story): string {
-  const s = canonicalStory(story);
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(16).padStart(8, "0");
+  return fnv1a64(canonicalStory(story));
 }

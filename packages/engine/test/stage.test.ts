@@ -7,6 +7,7 @@ import { Simulation } from "../src/simulation";
 function build(bg = "bg_room"): Story {
   const res = validateStory({
     meta: { id: "s", title: "Stage", start: "a", seed: 1 },
+    characters: [{ id: "n", name: "Narrator" }],
     assets: [
       { id: "bg_room", src: "/bg/room.png" },
       { id: "bg_hall", src: "/bg/hall.png" },
@@ -74,6 +75,7 @@ describe("stage (scene/show/hide)", () => {
   it("hiding an absent slot is a no-op", () => {
     const res = validateStory({
       meta: { id: "h", title: "h", start: "a", seed: 1 },
+      characters: [{ id: "n", name: "Narrator" }],
       nodes: [{ id: "a", body: [{ op: "hide", sprite: "ghost" }, { op: "say", who: "n", text: "ok" }] }],
     });
     if (!res.success) throw new Error("invalid: " + JSON.stringify(res.issues));

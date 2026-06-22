@@ -1,5 +1,5 @@
 import { validateStory } from "@ludelier/schema";
-import { Simulation } from "@ludelier/engine";
+import { Simulation, StatementBudgetError } from "@ludelier/engine";
 import { PixiRenderer } from "@ludelier/renderer-pixi";
 import storyData from "../../../examples/cafe.story.json";
 import { clearSave, loadSave, saveState } from "./save";
@@ -11,16 +11,54 @@ if (!parsed.success) {
 }
 const story = parsed.data;
 
-const sim = new Simulation(story, { seed: story.meta.seed });
+let sim: Simulation;
+
+/**
+ * Show a recoverable error overlay instead of hard-crashing the page. The reducer throws a
+ * `StatementBudgetError` on an infinite jump loop (a story bug that can slip past static
+ * validation via conditions); catching it keeps the player from white-screening.
+ */
+function fatal(err: unknown): void {
+  const message =
+    err instanceof StatementBudgetError
+      ? "This story has an infinite loop and can't be played. (A node jumps in a cycle with no way to stop.)"
+      : `Playback error: ${err instanceof Error ? err.message : String(err)}`;
+  const root = document.getElementById("app");
+  if (root) {
+    root.innerHTML = "";
+    const box = document.createElement("div");
+    box.setAttribute("role", "alert");
+    box.style.cssText =
+      "position:absolute;inset:0;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,sans-serif;color:#eee;background:#1a1a1a";
+    const p = document.createElement("p");
+    p.textContent = message;
+    p.style.cssText = "max-width:32rem;font-size:1rem;line-height:1.5";
+    const a = document.createElement("a");
+    a.href = "?new";
+    a.textContent = "Restart from the beginning";
+    a.style.cssText = "color:#8ab4f8";
+    box.append(p, a);
+    root.append(box);
+  }
+  document.documentElement.dataset.error = "1";
+}
+
+/** Run a play step, surfacing any engine throw as a recoverable overlay rather than a crash. */
+function safeStep(step: () => void): void {
+  try {
+    step();
+    update();
+  } catch (err) {
+    fatal(err);
+  }
+}
 
 function doAdvance(): void {
-  sim.dispatch({ type: "ADVANCE" });
-  update();
+  safeStep(() => sim.dispatch({ type: "ADVANCE" }));
 }
 
 function doChoose(index: number): void {
-  sim.dispatch({ type: "CHOOSE", index });
-  update();
+  safeStep(() => sim.dispatch({ type: "CHOOSE", index }));
 }
 
 const renderer = new PixiRenderer({
@@ -61,12 +99,20 @@ async function main(): Promise<void> {
   const fresh = new URLSearchParams(location.search).has("new");
   if (fresh) {
     await clearSave(story.meta.id);
-  } else {
-    const saved = await loadSave(story.meta.id);
-    if (saved) sim.state = saved;
   }
 
-  update();
+  // Building the initial state runs the opening statements — a looping story throws here too.
+  try {
+    sim = new Simulation(story, { seed: story.meta.seed });
+    if (!fresh) {
+      const saved = await loadSave(story.meta.id);
+      if (saved) sim.state = saved;
+    }
+    update();
+  } catch (err) {
+    fatal(err);
+    return;
+  }
   // Signal first paint is done — Playwright waits on this before asserting/screenshotting.
   requestAnimationFrame(() => {
     document.documentElement.dataset.ready = "1";

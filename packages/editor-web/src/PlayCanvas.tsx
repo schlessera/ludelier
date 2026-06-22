@@ -39,6 +39,17 @@ export function PlayCanvas({
     if (sim && renderer) renderer.render(sim.state);
   }
 
+  /** Dispatch a play action, surfacing an engine throw (e.g. an infinite loop) as the inline
+   *  error instead of letting it escape the Pixi event handler and crash the preview. */
+  function step(action: () => void): void {
+    try {
+      action();
+      draw();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function rebuild(): Promise<void> {
     const renderer = rendererRef.current;
     if (!renderer) return;
@@ -59,14 +70,8 @@ export function PlayCanvas({
   useEffect(() => {
     let disposed = false;
     const renderer = new PixiRenderer({
-      onAdvance: () => {
-        simRef.current?.dispatch({ type: "ADVANCE" });
-        draw();
-      },
-      onChoose: (index) => {
-        simRef.current?.dispatch({ type: "CHOOSE", index });
-        draw();
-      },
+      onAdvance: () => step(() => simRef.current?.dispatch({ type: "ADVANCE" })),
+      onChoose: (index) => step(() => simRef.current?.dispatch({ type: "CHOOSE", index })),
     });
     rendererRef.current = renderer;
     void (async () => {
