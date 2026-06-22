@@ -27,8 +27,10 @@ describe("find-references", () => {
     if (res.success) {
       const refs = res.data as Reference[];
       const assetRefs = refs.filter((r) => r.kind === "asset");
-      // cafe shows "her" in two nodes (start, sit)
-      expect(assetRefs).toHaveLength(2);
+      // cafe shows "her" in four nodes (start, sit, talk, ending_lucky)
+      expect(assetRefs).toHaveLength(4);
+      // "her" is also a character id now (she speaks) — find-references reports both roles
+      expect(refs.some((r) => r.kind === "character")).toBe(true);
     }
   });
 });

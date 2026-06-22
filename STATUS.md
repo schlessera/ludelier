@@ -87,7 +87,7 @@ just changeset / just version
 ## 6. Completed work
 
 ### P0 — headless deterministic core ✅
-- **`@ludelier/schema`** — Story = nodes of statements (`say`/`set`/`add`/`roll`/`choice`/`jump`/`end`), discriminated union on `op`. `validateStory()` = Zod shape + cross-reference checks (unique ids, gotos resolve, start exists). `storyJsonSchema()` exports JSON Schema for LLM constraint.
+- **`@ludelier/schema`** — Story = nodes of statements (`say`/`set`/`add`/`roll`/`choice`/`jump`/`branch`/`end` + `scene`/`show`/`hide`), discriminated union on `op`. `branch` is a conditional jump (state-driven flow; falls through when false). `validateStory()` = Zod shape + cross-reference checks (unique node/asset/statement ids, gotos resolve, `say.who` is a declared character, start exists, no statement after a terminal). `storyJsonSchema()` exports JSON Schema for LLM constraint.
 - **`@ludelier/engine`** — pure `reducer(story, state, action)`; mulberry32 seeded RNG threaded through state (no `Math.random`); FNV-1a stable hash over sorted-key snapshot; `Simulation` headless runner; `record()` / `replayTrace()` JSONL regression.
 - **`@ludelier/cli`** — `validate | simulate | replay` agent harness.
 - **Determinism proven:** seed 42 → fixed hash; replay matches per-step; tampered hash + wrong seed throw.

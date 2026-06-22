@@ -2,6 +2,9 @@
   { "type": "ADVANCE" },
   { "type": "CHOOSE", "index": 0 },
   { "type": "ADVANCE" },
-  { "type": "CHOOSE", "index": 0 },
+  { "type": "CHOOSE", "index": 1 },
+  { "type": "ADVANCE" },
+  { "type": "ADVANCE" },
+  { "type": "ADVANCE" },
   { "type": "ADVANCE" }
 ]

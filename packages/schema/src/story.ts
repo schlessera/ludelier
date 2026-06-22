@@ -70,6 +70,17 @@ export const JumpStatement = z.object({
   id: StatementId.optional(),
   goto: Id,
 });
+/**
+ * Conditional jump: if `cond` holds, continue at node `goto`; otherwise fall through to the next
+ * statement. The building block for state-driven branching (if / elif / else — chain several).
+ * Unlike `jump` it is NOT terminal — because it can fall through, statements may follow it.
+ */
+export const BranchStatement = z.object({
+  op: z.literal("branch"),
+  id: StatementId.optional(),
+  cond: Condition,
+  goto: Id,
+});
 export const EndStatement = z.object({
   op: z.literal("end"),
   id: StatementId.optional(),
@@ -108,6 +119,7 @@ export const Statement = z.discriminatedUnion("op", [
   RollStatement,
   ChoiceStatement,
   JumpStatement,
+  BranchStatement,
   EndStatement,
   SceneStatement,
   ShowStatement,

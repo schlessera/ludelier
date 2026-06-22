@@ -5,13 +5,13 @@ import { ok, fail } from "../result";
 import { slugId } from "./ids";
 
 /**
- * Rewire a goto target — either a `jump.goto` or a `choice.options[optionIndex].goto`.
+ * Rewire a goto target — a `jump.goto`, a `branch.goto`, or a `choice.options[optionIndex].goto`.
  * The target node's existence is enforced by `validateStory` in applyEdit.
  */
 export const rewireGotoTask: Task = {
   name: "rewire-goto",
   kind: "manipulate",
-  description: "Repoint a jump or choice-option goto to another node (target the statement by id).",
+  description: "Repoint a jump, branch, or choice-option goto to another node (target the statement by id).",
   params: z.object({
     nodeId: slugId,
     statementId: z.string().min(1),
@@ -26,7 +26,7 @@ export const rewireGotoTask: Task = {
     if (!stmt) return fail([{ path: "statementId", message: `no statement "${p.statementId}" in node "${p.nodeId}"` }]);
 
     let next: Statement;
-    if (stmt.op === "jump") {
+    if (stmt.op === "jump" || stmt.op === "branch") {
       next = { ...stmt, goto: p.goto };
     } else if (stmt.op === "choice") {
       if (p.optionIndex === undefined) {
@@ -39,7 +39,7 @@ export const rewireGotoTask: Task = {
         options: stmt.options.map((o, j) => (j === p.optionIndex ? { ...o, goto: p.goto } : o)),
       };
     } else {
-      return fail([{ path: "statementId", message: `statement "${p.statementId}" is not a jump or choice` }]);
+      return fail([{ path: "statementId", message: `statement "${p.statementId}" is not a jump, branch, or choice` }]);
     }
 
     const body = node.body.map((s) => (s.id === p.statementId ? next : s));

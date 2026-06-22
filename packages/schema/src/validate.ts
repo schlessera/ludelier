@@ -69,6 +69,9 @@ function crossRefIssues(story: Story): Issue[] {
       if (stmt.op === "jump" && !ids.has(stmt.goto)) {
         issues.push({ path: at, message: `jump to unknown node "${stmt.goto}"` });
       }
+      if (stmt.op === "branch" && !ids.has(stmt.goto)) {
+        issues.push({ path: at, message: `branch to unknown node "${stmt.goto}"` });
+      }
       if (stmt.op === "choice") {
         stmt.options.forEach((opt, j) => {
           if (!ids.has(opt.goto)) {

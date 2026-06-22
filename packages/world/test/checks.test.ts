@@ -108,6 +108,44 @@ describe("explore task is registered and runs", () => {
   });
 });
 
+describe("branch in the world API", () => {
+  const story = () =>
+    build({
+      meta: { id: "x", title: "x", start: "a", seed: 1 },
+      characters: [{ id: "n", name: "N" }],
+      nodes: [
+        {
+          id: "a",
+          body: [
+            { op: "set", var: "f", value: 1 },
+            { op: "branch", cond: { var: "f", cmp: "eq", value: 1 }, goto: "lucky" },
+            { op: "say", who: "n", text: "ordinary" },
+            { op: "end" },
+          ],
+        },
+        { id: "lucky", body: [{ op: "say", who: "n", text: "rare" }, { op: "end" }] },
+      ],
+    });
+
+  it("graph counts the branch goto as an edge (so the target is reachable, not a dead end)", () => {
+    const world = createWorld();
+    const g = world.get("graph")!.run!(story(), {});
+    expect(g.success).toBe(true);
+    if (g.success) {
+      const report = g.data as { edges: { from: string; to: string }[]; unreachable: string[]; deadEnds: string[] };
+      expect(report.edges).toContainEqual({ from: "a", to: "lucky" });
+      expect(report.unreachable).toEqual([]);
+      expect(report.deadEnds).toEqual([]);
+    }
+  });
+
+  it("explore takes the branch when its condition holds", () => {
+    const res = exploreTask.run!(story(), {});
+    expect(res.success).toBe(true);
+    if (res.success) expect((res.data as { reached: string[] }).reached).toContain("lucky");
+  });
+});
+
 describe("hashStory width", () => {
   it("is a 64-bit (16 hex char) digest", () => {
     expect(hashStory(loadCafe())).toMatch(/^[0-9a-f]{16}$/);
