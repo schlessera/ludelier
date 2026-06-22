@@ -2,6 +2,8 @@ import type { Story } from "@ludelier/schema";
 import type { Registry } from "./registry";
 import { applyEdit, validateWorld } from "./applyEdit";
 import { fail, ok, type Result } from "./result";
+import { normalizeStatementIds, nextStatementId } from "./statement-id";
+import { STATEMENT_APPEND_COMMANDS } from "./manipulate/statements";
 
 /**
  * One event in the authoring history. The canonical fold uses only these fields —
@@ -29,7 +31,9 @@ export class EditLog {
 
   constructor(world: Registry, baseStory: Story) {
     this.world = world;
-    this.baseStory = baseStory;
+    // Every statement carries a stable id from here on — so edits can target by identity, and
+    // a refold reproduces identical ids (the appended ones are baked into each record's params).
+    this.baseStory = normalizeStatementIds(baseStory);
   }
 
   /** O(n) refold over the active records (KTD-2 — accepted for slice-1 sizes). */
@@ -48,11 +52,19 @@ export class EditLog {
 
   /** Apply a command on the current story; append a record on success (log unchanged on failure). */
   apply(command: string, params: unknown, opts: { runId: string }): Result<Story> {
-    const res = applyEdit(this.world, this.currentStory(), command, params);
+    // A statement-creating command gets a deterministic stable id baked into the record (seq is
+    // the seq this record will take — post-truncation length === head). A re-applied/imported
+    // record already carries its id, so we never overwrite one.
+    const seq = this.head;
+    let finalParams = params;
+    if (STATEMENT_APPEND_COMMANDS.has(command) && (params as { id?: unknown }).id === undefined) {
+      finalParams = { ...(params as Record<string, unknown>), id: nextStatementId(seq) };
+    }
+    const res = applyEdit(this.world, this.currentStory(), command, finalParams);
     if (!res.success) return res;
     // Linear-history (KTD-11): a new edit after undo discards the orphaned redo tail.
     if (this.head < this.records.length) this.records = this.records.slice(0, this.head);
-    this.records.push({ seq: this.records.length, runId: opts.runId, command, params });
+    this.records.push({ seq: this.records.length, runId: opts.runId, command, params: finalParams });
     this.head = this.records.length;
     return res;
   }

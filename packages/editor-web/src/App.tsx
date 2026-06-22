@@ -253,6 +253,7 @@ function ChatPanel({ session }: { session: EditorSession }): JSX.Element {
 function summarizeParams(params: unknown): string {
   if (!params || typeof params !== "object") return "";
   const p = params as Record<string, unknown>;
+  if (typeof p.statementId === "string") return `${p.nodeId ? `${String(p.nodeId)} · ` : ""}${p.statementId}`;
   if (typeof p.id === "string") return p.id;
   if (typeof p.nodeId === "string") return String(p.nodeId);
   return JSON.stringify(p).slice(0, 60);
@@ -294,6 +295,7 @@ function StoryInspector({ snap }: { snap: EditorSnapshot }): JSX.Element {
             {node.body.map((s, i) => (
               <li key={i}>
                 <code>{s.op}</code> <span className="muted">{summarize(s)}</span>
+                {s.id && <span className="stmt-id muted"> #{s.id}</span>}
               </li>
             ))}
           </ol>

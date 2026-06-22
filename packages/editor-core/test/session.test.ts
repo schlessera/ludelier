@@ -115,7 +115,7 @@ describe("EditorSession", () => {
     const provider = scriptedTools([
       [call("create-node", { id: "b" }, "1")],
       [call("append-end", { nodeId: "b" }, "2")],
-      [call("rewire-goto", { nodeId: "a", index: 1, goto: "b" }, "3")], // wire a -> b (reachable + ends)
+      [call("rewire-goto", { nodeId: "a", statementId: "a#1", goto: "b" }, "3")], // wire a -> b (reachable + ends)
       [call("done", {}, "4")],
     ]);
     const res = await s.chat("add an ending", { provider, runId: "chat-1" });

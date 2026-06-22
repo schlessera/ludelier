@@ -6,6 +6,14 @@ const Id = z
   .min(1)
   .regex(/^[A-Za-z0-9_.-]+$/, "id must be slug-like ([A-Za-z0-9_.-]+)");
 
+/**
+ * A stable per-statement identifier — lets edits target a statement by id rather than by a
+ * fragile position. Optional on input (legacy / authored stories omit it); the world's
+ * `normalizeStatementIds` fills any gaps deterministically, and statement-creating edits assign
+ * one. Not slug-constrained (generated ids may contain separators like `#`).
+ */
+export const StatementId = z.string().min(1);
+
 /** Variable values are primitives only — keeps state JSON-serialisable and hashable. */
 export const VarValue = z.union([z.string(), z.number(), z.boolean()]);
 export type VarValue = z.infer<typeof VarValue>;
@@ -23,21 +31,25 @@ export type Condition = z.infer<typeof Condition>;
 
 export const SayStatement = z.object({
   op: z.literal("say"),
+  id: StatementId.optional(),
   who: Id,
   text: z.string(),
 });
 export const SetStatement = z.object({
   op: z.literal("set"),
+  id: StatementId.optional(),
   var: z.string().min(1),
   value: VarValue,
 });
 export const AddStatement = z.object({
   op: z.literal("add"),
+  id: StatementId.optional(),
   var: z.string().min(1),
   amount: z.number(),
 });
 export const RollStatement = z.object({
   op: z.literal("roll"),
+  id: StatementId.optional(),
   var: z.string().min(1),
   min: z.number().int(),
   max: z.number().int(),
@@ -49,15 +61,18 @@ export const ChoiceOption = z.object({
 });
 export const ChoiceStatement = z.object({
   op: z.literal("choice"),
+  id: StatementId.optional(),
   prompt: z.string().optional(),
   options: z.array(ChoiceOption).min(1),
 });
 export const JumpStatement = z.object({
   op: z.literal("jump"),
+  id: StatementId.optional(),
   goto: Id,
 });
 export const EndStatement = z.object({
   op: z.literal("end"),
+  id: StatementId.optional(),
 });
 
 /** Where a character sprite sits on the stage. The renderer maps these to x positions. */
@@ -67,11 +82,13 @@ export type SpritePosition = z.infer<typeof SpritePosition>;
 /** Set the background and clear all sprites. Omitting `bg` clears to an empty stage. */
 export const SceneStatement = z.object({
   op: z.literal("scene"),
+  id: StatementId.optional(),
   bg: Id.optional(),
 });
 /** Display a sprite in a named slot. Showing the same `sprite` slot again replaces it. */
 export const ShowStatement = z.object({
   op: z.literal("show"),
+  id: StatementId.optional(),
   sprite: Id,
   asset: Id,
   at: SpritePosition.default("center"),
@@ -79,6 +96,7 @@ export const ShowStatement = z.object({
 /** Remove a sprite slot from the stage. Hiding an absent slot is a no-op. */
 export const HideStatement = z.object({
   op: z.literal("hide"),
+  id: StatementId.optional(),
   sprite: Id,
 });
 
