@@ -9,6 +9,7 @@ function outgoing(node: StoryNode): string[] {
   const outs: string[] = [];
   for (const s of node.body) {
     if (s.op === "jump") outs.push(s.goto);
+    if (s.op === "branch") outs.push(s.goto);
     if (s.op === "choice") for (const o of s.options) outs.push(o.goto);
   }
   return outs;

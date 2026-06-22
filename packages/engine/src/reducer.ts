@@ -101,6 +101,15 @@ function resolve(story: Story, state: GameState): GameState {
         node = stmt.goto;
         index = 0;
         break;
+      case "branch":
+        // Conditional jump: take the goto when the condition holds, else fall through.
+        if (compare(vars[stmt.cond.var], stmt.cond.cmp, stmt.cond.value)) {
+          node = stmt.goto;
+          index = 0;
+        } else {
+          index++;
+        }
+        break;
       case "scene":
         // A new scene replaces the background and clears all sprites.
         stage = { bg: stmt.bg ?? null, sprites: [] };

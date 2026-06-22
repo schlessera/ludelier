@@ -26,6 +26,7 @@ export const findReferencesTask: Task = {
       node.body.forEach((stmt, i) => {
         const at = `nodes.${node.id}.body[${i}]`;
         if (stmt.op === "jump" && stmt.goto === id) refs.push({ path: at, kind: "goto" });
+        if (stmt.op === "branch" && stmt.goto === id) refs.push({ path: at, kind: "goto" });
         if (stmt.op === "choice") {
           stmt.options.forEach((o, j) => {
             if (o.goto === id) refs.push({ path: `${at}.options[${j}]`, kind: "goto" });

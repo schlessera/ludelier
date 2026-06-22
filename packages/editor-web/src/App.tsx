@@ -355,6 +355,10 @@ function SidePanel({ session, snap }: { session: EditorSession; snap: EditorSnap
 function summarize(s: Record<string, unknown>): string {
   if (s.op === "say") return `${String(s.who)}: ${String(s.text)}`;
   if (s.op === "jump") return `→ ${String(s.goto)}`;
+  if (s.op === "branch") {
+    const c = s.cond as { var?: string; cmp?: string; value?: unknown } | undefined;
+    return `if ${String(c?.var)} ${String(c?.cmp)} ${String(c?.value)} → ${String(s.goto)}`;
+  }
   if (s.op === "choice") return `${(s.options as unknown[] | undefined)?.length ?? 0} option(s)`;
   if (s.op === "scene") return `bg ${String(s.bg)}`;
   if (s.op === "show" || s.op === "hide") return String(s.asset ?? s.id ?? "");

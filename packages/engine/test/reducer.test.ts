@@ -122,6 +122,37 @@ describe("compare (no silent coercion)", () => {
   });
 });
 
+describe("branch (conditional jump)", () => {
+  function story(flag: number): Story {
+    return build({
+      meta: { id: "x", title: "x", start: "a", seed: 1 },
+      characters: [{ id: "n", name: "N" }],
+      nodes: [
+        {
+          id: "a",
+          body: [
+            { op: "set", var: "flag", value: flag },
+            { op: "branch", cond: { var: "flag", cmp: "eq", value: 1 }, goto: "b" },
+            { op: "say", who: "n", text: "fell through" },
+            { op: "end" },
+          ],
+        },
+        { id: "b", body: [{ op: "say", who: "n", text: "branched" }, { op: "end" }] },
+      ],
+    });
+  }
+
+  it("takes the goto when the condition holds", () => {
+    const s = initialState(story(1), 1);
+    expect(s.pending).toMatchObject({ kind: "say", text: "branched" });
+  });
+
+  it("falls through to the next statement when the condition is false", () => {
+    const s = initialState(story(0), 1);
+    expect(s.pending).toMatchObject({ kind: "say", text: "fell through" });
+  });
+});
+
 describe("StatementBudgetError", () => {
   it("is thrown on an infinite jump loop", () => {
     const loop = build({

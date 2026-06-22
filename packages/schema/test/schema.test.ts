@@ -33,6 +33,26 @@ describe("validateStory", () => {
     }
   });
 
+  it("rejects a branch to an unknown node (cross-reference)", () => {
+    const res = validateStory({
+      meta: { id: "x", title: "x", start: "a" },
+      nodes: [{ id: "a", body: [{ op: "branch", cond: { var: "f", cmp: "eq", value: 1 }, goto: "nowhere" }, { op: "end" }] }],
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) expect(res.issues.some((i) => i.message.includes('branch to unknown node "nowhere"'))).toBe(true);
+  });
+
+  it("accepts a branch followed by more statements (it is not terminal)", () => {
+    const res = validateStory({
+      meta: { id: "x", title: "x", start: "a" },
+      nodes: [
+        { id: "a", body: [{ op: "branch", cond: { var: "f", cmp: "eq", value: 1 }, goto: "b" }, { op: "jump", goto: "b" }] },
+        { id: "b", body: [{ op: "end" }] },
+      ],
+    });
+    expect(res.success).toBe(true);
+  });
+
   it("rejects a start that is not a node", () => {
     const res = validateStory({
       meta: { id: "x", title: "x", start: "ghost" },

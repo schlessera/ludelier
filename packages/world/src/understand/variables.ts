@@ -1,4 +1,16 @@
-import type { Story } from "@ludelier/schema";
+import type { Condition, Story } from "@ludelier/schema";
+
+/** Every condition the story evaluates, from choice-option `if`s and `branch` statements. */
+function conditions(story: Story): Condition[] {
+  const out: Condition[] = [];
+  for (const node of story.nodes) {
+    for (const stmt of node.body) {
+      if (stmt.op === "branch") out.push(stmt.cond);
+      if (stmt.op === "choice") for (const opt of stmt.options) if (opt.if) out.push(opt.if);
+    }
+  }
+  return out;
+}
 
 /**
  * Variables that are *read* (in a `choice` option `if`) but never *written* (`set`/`add`/`roll`)
@@ -12,13 +24,12 @@ import type { Story } from "@ludelier/schema";
  */
 export function unwrittenVarReads(story: Story): string[] {
   const written = new Set<string>();
-  const read = new Set<string>();
   for (const node of story.nodes) {
     for (const stmt of node.body) {
       if (stmt.op === "set" || stmt.op === "add" || stmt.op === "roll") written.add(stmt.var);
-      if (stmt.op === "choice") for (const opt of stmt.options) if (opt.if) read.add(opt.if.var);
     }
   }
+  const read = new Set(conditions(story).map((c) => c.var));
   return [...read].filter((v) => !written.has(v)).sort();
 }
 
@@ -46,24 +57,18 @@ export function conditionTypeIssues(story: Story): string[] {
   }
 
   const issues = new Set<string>();
-  for (const node of story.nodes) {
-    for (const stmt of node.body) {
-      if (stmt.op !== "choice") continue;
-      for (const opt of stmt.options) {
-        const cond = opt.if;
-        if (!cond || !ORDERED.has(cond.cmp)) continue;
-        if (typeof cond.value !== "number") {
-          issues.add(
-            `variable "${cond.var}" is compared with "${cond.cmp}" against a non-number (${typeof cond.value}) — ordered comparisons are number-only, so this branch is always false.`,
-          );
-        }
-        const bad = nonNumberWrites.get(cond.var);
-        if (bad && bad.size > 0) {
-          issues.add(
-            `variable "${cond.var}" is compared with "${cond.cmp}" but is set to a ${[...bad].sort().join("/")} elsewhere — ordered comparisons are number-only, so the comparison is type-confused.`,
-          );
-        }
-      }
+  for (const cond of conditions(story)) {
+    if (!ORDERED.has(cond.cmp)) continue;
+    if (typeof cond.value !== "number") {
+      issues.add(
+        `variable "${cond.var}" is compared with "${cond.cmp}" against a non-number (${typeof cond.value}) — ordered comparisons are number-only, so this branch is always false.`,
+      );
+    }
+    const bad = nonNumberWrites.get(cond.var);
+    if (bad && bad.size > 0) {
+      issues.add(
+        `variable "${cond.var}" is compared with "${cond.cmp}" but is set to a ${[...bad].sort().join("/")} elsewhere — ordered comparisons are number-only, so the comparison is type-confused.`,
+      );
     }
   }
   return [...issues].sort();
