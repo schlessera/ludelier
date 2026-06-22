@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createWorld, applyEdit, hashStory } from "@ludelier/world";
+import { createWorld, applyEdit, hashStory, normalizeStatementIds } from "@ludelier/world";
 import { validateStory, type Story } from "@ludelier/schema";
 import { runAgent } from "../src/run";
 import type { AgentEvent } from "../src/run";
@@ -59,7 +59,7 @@ describe("runAgent (hermetic, scripted provider)", () => {
       [call("create-node", { id: "b" }, "1")],
       [call("append-say", { nodeId: "b", who: "n", text: "branch" }, "2")],
       [call("append-end", { nodeId: "b" }, "3")],
-      [call("rewire-goto", { nodeId: "a", index: 1, goto: "b" }, "4")], // a's [say, ...]; index 1 must be a jump/choice
+      [call("rewire-goto", { nodeId: "a", statementId: "a#1", goto: "b" }, "4")], // a's [say, ...]; index 1 must be a jump/choice
       [call("done", {}, "5")],
     ]);
     // Give node a a jump at index 1 so rewire-goto has a target.
@@ -110,7 +110,8 @@ describe("runAgent (hermetic, scripted provider)", () => {
     const res = await runAgent({ provider, prompt: "x", story: base, runId: "run-1", maxSteps: 10 });
     const reverted = res.log.revertRun(res.runId);
     expect(reverted.success).toBe(true);
-    if (reverted.success) expect(hashStory(reverted.data)).toBe(hashStory(base));
+    // the log normalizes the base (assigns statement ids), so revert restores the normalized form
+    if (reverted.success) expect(hashStory(reverted.data)).toBe(hashStory(normalizeStatementIds(base)));
   });
 
   it("stops at maxSteps with a partial, non-completed result whose records persist", async () => {
@@ -137,7 +138,7 @@ describe("runAgent (hermetic, scripted provider)", () => {
       [call("create-node", { id: "bad id!" }, "1")], // rejected (invalid id)
       [call("create-node", { id: "b" }, "2")],
       [call("append-end", { nodeId: "b" }, "3")],
-      [call("rewire-goto", { nodeId: "a", index: 1, goto: "b" }, "4")],
+      [call("rewire-goto", { nodeId: "a", statementId: "a#1", goto: "b" }, "4")],
       [call("done", {}, "5")],
     ]);
     const res = await runAgent({ provider, prompt: "x", story, runId: "run-1", maxSteps: 10 });
@@ -159,7 +160,7 @@ describe("runAgent (hermetic, scripted provider)", () => {
       [call("create-node", { id: "b" }, "1")],
       [call("append-end", { nodeId: "b" }, "2")], // b ends, but nothing points to it yet
       [call("done", {}, "3")], // rejected: b is unreachable
-      [call("rewire-goto", { nodeId: "a", index: 1, goto: "b" }, "4")], // wire a -> b
+      [call("rewire-goto", { nodeId: "a", statementId: "a#1", goto: "b" }, "4")], // wire a -> b
       [call("done", {}, "5")], // accepted
     ]);
     const res = await runAgent({ provider, prompt: "x", story, runId: "run-1", maxSteps: 10 });
@@ -207,7 +208,7 @@ describe("runAgent (hermetic, scripted provider)", () => {
     const provider = scriptedTools([
       [call("create-node", { id: "b" }, "1")],
       [call("append-end", { nodeId: "b" }, "2")],
-      [call("rewire-goto", { nodeId: "a", index: 1, goto: "b" }, "3")],
+      [call("rewire-goto", { nodeId: "a", statementId: "a#1", goto: "b" }, "3")],
       [call("done", {}, "4")],
     ]);
     const res = await runAgent({ provider, prompt: "x", story: selfLoop, runId: "run-1", onEvent: (e) => events.push(e) });
@@ -261,7 +262,7 @@ describe("runAgent (hermetic, scripted provider)", () => {
     const provider = scriptedTools([
       [call("create-node", { id: "b" }, "1")],
       [call("append-end", { nodeId: "b" }, "2")],
-      [call("rewire-goto", { nodeId: "a", index: 1, goto: "b" }, "3")],
+      [call("rewire-goto", { nodeId: "a", statementId: "a#1", goto: "b" }, "3")],
       [call("done", {}, "4")],
     ]);
     const res = await runAgent({

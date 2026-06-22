@@ -11,19 +11,19 @@ import { slugId } from "./ids";
 export const rewireGotoTask: Task = {
   name: "rewire-goto",
   kind: "manipulate",
-  description: "Repoint a jump or choice-option goto to another node.",
+  description: "Repoint a jump or choice-option goto to another node (target the statement by id).",
   params: z.object({
     nodeId: slugId,
-    index: z.number().int().min(0),
+    statementId: z.string().min(1),
     goto: slugId,
     optionIndex: z.number().int().min(0).optional(),
   }),
   apply: (story, params) => {
-    const p = params as { nodeId: string; index: number; goto: string; optionIndex?: number };
+    const p = params as { nodeId: string; statementId: string; goto: string; optionIndex?: number };
     const node = story.nodes.find((n) => n.id === p.nodeId);
     if (!node) return fail([{ path: "nodeId", message: `unknown node "${p.nodeId}"` }]);
-    const stmt = node.body[p.index];
-    if (!stmt) return fail([{ path: "index", message: `index ${p.index} out of range for node "${p.nodeId}"` }]);
+    const stmt = node.body.find((s) => s.id === p.statementId);
+    if (!stmt) return fail([{ path: "statementId", message: `no statement "${p.statementId}" in node "${p.nodeId}"` }]);
 
     let next: Statement;
     if (stmt.op === "jump") {
@@ -39,10 +39,10 @@ export const rewireGotoTask: Task = {
         options: stmt.options.map((o, j) => (j === p.optionIndex ? { ...o, goto: p.goto } : o)),
       };
     } else {
-      return fail([{ path: "index", message: `statement at index ${p.index} is not a jump or choice` }]);
+      return fail([{ path: "statementId", message: `statement "${p.statementId}" is not a jump or choice` }]);
     }
 
-    const body = node.body.map((s, i) => (i === p.index ? next : s));
+    const body = node.body.map((s) => (s.id === p.statementId ? next : s));
     const nodes = story.nodes.map((n): StoryNode => (n.id === p.nodeId ? { ...n, body } : n));
     return ok({ ...story, nodes });
   },

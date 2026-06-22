@@ -34,7 +34,8 @@ describe("applyEdit — spine builds a valid story", () => {
     let s = expectOk(applyEdit(world, base, "create-node", { id: "c" }));
     s = expectOk(applyEdit(world, s, "append-end", { nodeId: "c" }));
     s = expectOk(applyEdit(world, s, "append-choice", { nodeId: "b", options: [{ label: "go", goto: "a" }] }));
-    s = expectOk(applyEdit(world, s, "rewire-goto", { nodeId: "b", index: 1, goto: "c", optionIndex: 0 }));
+    // the appended choice gets the positional fallback id "b#1" (node b's body was [end]).
+    s = expectOk(applyEdit(world, s, "rewire-goto", { nodeId: "b", statementId: "b#1", goto: "c", optionIndex: 0 }));
     const choice = s.nodes.find((n) => n.id === "b")!.body[1]!;
     expect(choice.op === "choice" && choice.options[0]!.goto).toBe("c");
   });
