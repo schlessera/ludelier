@@ -19,8 +19,8 @@ const base: Story = {
 function applyRun(log: EditLog, runId: string): void {
   for (const [command, params] of [
     ["create-node", { id: "b" }],
-    ["append-say", { nodeId: "b", who: "n", text: "hi" }],
-    ["append-end", { nodeId: "b" }],
+    ["add-statement", { nodeId: "b", statement: { op: "say", who: "n", text: "hi" } }],
+    ["add-statement", { nodeId: "b", statement: { op: "end" } }],
   ] as const) {
     const res = log.apply(command, params, { runId });
     if (!res.success) throw new Error("run step failed: " + JSON.stringify(res.issues));
@@ -100,7 +100,7 @@ describe("rejected command", () => {
     applyRun(log, "r1");
     const before = hashStory(log.currentStory());
     const beforeLen = log.recordsView().length;
-    const res = log.apply("append-say", { nodeId: "b", who: "ghost", text: "x" }, { runId: "r2" });
+    const res = log.apply("add-statement", { nodeId: "b", statement: { op: "say", who: "ghost", text: "x" } }, { runId: "r2" });
     expect(res.success).toBe(false);
     expect(log.recordsView().length).toBe(beforeLen);
     expect(hashStory(log.currentStory())).toBe(before);
@@ -111,8 +111,8 @@ describe("stable statement ids", () => {
   it("targets the right statement by id (remove keeps the others)", () => {
     const log = new EditLog(world, base);
     log.apply("create-node", { id: "x" }, { runId: "r1" });
-    log.apply("append-say", { nodeId: "x", who: "n", text: "first" }, { runId: "r1" });
-    log.apply("append-say", { nodeId: "x", who: "n", text: "second" }, { runId: "r1" });
+    log.apply("add-statement", { nodeId: "x", statement: { op: "say", who: "n", text: "first" } }, { runId: "r1" });
+    log.apply("add-statement", { nodeId: "x", statement: { op: "say", who: "n", text: "second" } }, { runId: "r1" });
 
     const before = log.currentStory().nodes.find((n) => n.id === "x")!;
     const firstSay = before.body.find((s) => s.op === "say" && s.text === "first")!;
@@ -136,7 +136,7 @@ describe("stable statement ids", () => {
   it("assigned ids survive a refold (export/import) unchanged", () => {
     const log = new EditLog(world, base);
     log.apply("create-node", { id: "x" }, { runId: "r1" });
-    log.apply("append-say", { nodeId: "x", who: "n", text: "hi" }, { runId: "r1" });
+    log.apply("add-statement", { nodeId: "x", statement: { op: "say", who: "n", text: "hi" } }, { runId: "r1" });
     const id = log.currentStory().nodes.find((n) => n.id === "x")!.body[0]!.id;
     const imported = importLog(world, base, log.export());
     expect(imported.success).toBe(true);

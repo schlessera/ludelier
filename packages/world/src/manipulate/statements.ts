@@ -1,212 +1,100 @@
 import { z } from "zod";
-import type { Statement, Story, StoryNode } from "@ludelier/schema";
+import { Statement } from "@ludelier/schema";
+import type { Statement as StatementT, Story, StoryNode } from "@ludelier/schema";
 import type { Task } from "../registry";
 import { ok, fail, type Result } from "../result";
 import { slugId } from "./ids";
 
-/** The statement-creating commands — the EditLog assigns each a stable statement id. */
-export const STATEMENT_CREATE_COMMANDS = new Set([
-  "append-say",
-  "append-show",
-  "append-choice",
-  "append-jump",
-  "append-end",
-  "insert-say",
-  "insert-show",
-  "insert-choice",
-]);
-
 /**
- * Append a built statement to a node's body (immutable). The statement's stable `id` comes from
- * the caller (the EditLog injects a deterministic one); a positional fallback keeps direct
- * `applyEdit` calls id'd too. Unknown node → fail.
+ * Generic statement ops. One `add-statement` (the schema's `Statement` discriminated union)
+ * covers every statement kind — and every future kind — instead of a flattened command per
+ * kind × position, so the toolset stays flat as the DSL grows. All the always-valid guardrails
+ * still run in `applyEdit` (terminal-position rule, say.who, cross-refs). Statements are targeted
+ * by their stable `id` (from get-node); `add-statement` is the only one that creates a new id.
  */
-function appendTo(story: Story, nodeId: string, stmt: Statement, id: string | undefined): Result<Story> {
-  const node = story.nodes.find((n) => n.id === nodeId);
-  if (!node) return fail([{ path: "nodeId", message: `unknown node "${nodeId}"` }]);
-  const withId: Statement = { ...stmt, id: id ?? `${nodeId}#${node.body.length}` };
-  const nodes = story.nodes.map((n): StoryNode => (n.id === nodeId ? { ...n, body: [...n.body, withId] } : n));
-  return ok({ ...story, nodes });
+
+/** The commands that create a brand-new statement — the EditLog assigns each a stable id. */
+export const STATEMENT_CREATE_COMMANDS = new Set(["add-statement"]);
+
+function withBody(story: Story, nodeId: string, body: StatementT[]): Story {
+  const nodes = story.nodes.map((n): StoryNode => (n.id === nodeId ? { ...n, body } : n));
+  return { ...story, nodes };
 }
 
-/** Insert a built statement immediately before an existing statement (by id). Immutable. */
-function insertBefore(
-  story: Story,
-  nodeId: string,
-  beforeStatementId: string,
-  stmt: Statement,
-  id: string | undefined,
-): Result<Story> {
-  const node = story.nodes.find((n) => n.id === nodeId);
-  if (!node) return fail([{ path: "nodeId", message: `unknown node "${nodeId}"` }]);
-  const idx = node.body.findIndex((s) => s.id === beforeStatementId);
-  if (idx === -1) {
-    return fail([{ path: "beforeStatementId", message: `no statement "${beforeStatementId}" in node "${nodeId}"` }]);
-  }
-  const withId: Statement = { ...stmt, id: id ?? `${nodeId}#i${node.body.length}` };
-  const body = [...node.body.slice(0, idx), withId, ...node.body.slice(idx)];
-  const nodes = story.nodes.map((n): StoryNode => (n.id === nodeId ? { ...n, body } : n));
-  return ok({ ...story, nodes });
-}
+export const addStatementTask: Task = {
+  name: "add-statement",
+  kind: "manipulate",
+  description:
+    "Add a statement to a node. Appends at the end, or inserts before `before` (a statement id from get-node). `statement` is a story statement object: an `op` plus that op's fields — e.g. {op:'say',who,text}, {op:'choice',prompt?,options:[{label,goto}]}, {op:'jump',goto}, {op:'end'}, {op:'scene',bg}, {op:'show',sprite,asset,at?}, {op:'hide',sprite}, {op:'set',var,value}, {op:'add',var,amount}, {op:'roll',var,min,max}. Omit the statement's id. A terminal (end/jump) must be the node's last statement.",
+  params: z.object({ nodeId: slugId, before: z.string().min(1).optional(), statement: Statement }),
+  apply: (story, params) => {
+    const p = params as { nodeId: string; before?: string; statement: StatementT };
+    const node = story.nodes.find((n) => n.id === p.nodeId);
+    if (!node) return fail([{ path: "nodeId", message: `unknown node "${p.nodeId}"` }]);
+    const stmt: StatementT = { ...p.statement, id: p.statement.id ?? `${p.nodeId}#g${node.body.length}` };
+    if (p.before === undefined) return ok(withBody(story, p.nodeId, [...node.body, stmt]));
+    const idx = node.body.findIndex((s) => s.id === p.before);
+    if (idx === -1) return fail([{ path: "before", message: `no statement "${p.before}" in node "${p.nodeId}"` }]);
+    return ok(withBody(story, p.nodeId, [...node.body.slice(0, idx), stmt, ...node.body.slice(idx)]));
+  },
+};
+
+export const updateStatementTask: Task = {
+  name: "update-statement",
+  kind: "manipulate",
+  description:
+    "Replace a statement in place (same position, same id) with a new `statement` object. Target the existing one by `statementId` (from get-node). Omit the statement's id.",
+  params: z.object({ nodeId: slugId, statementId: z.string().min(1), statement: Statement }),
+  apply: (story, params) => {
+    const p = params as { nodeId: string; statementId: string; statement: StatementT };
+    const node = story.nodes.find((n) => n.id === p.nodeId);
+    if (!node) return fail([{ path: "nodeId", message: `unknown node "${p.nodeId}"` }]);
+    if (!node.body.some((s) => s.id === p.statementId)) {
+      return fail([{ path: "statementId", message: `no statement "${p.statementId}" in node "${p.nodeId}"` }]);
+    }
+    const body = node.body.map((s) => (s.id === p.statementId ? { ...p.statement, id: p.statementId } : s));
+    return ok(withBody(story, p.nodeId, body));
+  },
+};
+
+export const moveStatementTask: Task = {
+  name: "move-statement",
+  kind: "manipulate",
+  description:
+    "Reorder a statement: move it before `before` (a statement id), or to the node's end if `before` is omitted. Target the moving statement by `statementId`.",
+  params: z.object({ nodeId: slugId, statementId: z.string().min(1), before: z.string().min(1).optional() }),
+  apply: (story, params) => {
+    const p = params as { nodeId: string; statementId: string; before?: string };
+    const node = story.nodes.find((n) => n.id === p.nodeId);
+    if (!node) return fail([{ path: "nodeId", message: `unknown node "${p.nodeId}"` }]);
+    const from = node.body.findIndex((s) => s.id === p.statementId);
+    if (from === -1) return fail([{ path: "statementId", message: `no statement "${p.statementId}" in node "${p.nodeId}"` }]);
+    const moving = node.body[from]!;
+    const without = node.body.filter((_, i) => i !== from);
+    let body: StatementT[];
+    if (p.before === undefined) {
+      body = [...without, moving];
+    } else {
+      const idx = without.findIndex((s) => s.id === p.before);
+      if (idx === -1) return fail([{ path: "before", message: `no statement "${p.before}" in node "${p.nodeId}"` }]);
+      body = [...without.slice(0, idx), moving, ...without.slice(idx)];
+    }
+    return ok(withBody(story, p.nodeId, body));
+  },
+};
 
 export const removeStatementTask: Task = {
   name: "remove-statement",
   kind: "manipulate",
-  description:
-    "Remove a statement from a node by its stable statement id (from get-node), not by position.",
+  description: "Remove a statement from a node by its stable statement id (from get-node), not by position.",
   params: z.object({ nodeId: slugId, statementId: z.string().min(1) }),
-  apply: (story, params) => {
+  apply: (story, params): Result<Story> => {
     const p = params as { nodeId: string; statementId: string };
     const node = story.nodes.find((n) => n.id === p.nodeId);
     if (!node) return fail([{ path: "nodeId", message: `unknown node "${p.nodeId}"` }]);
     if (!node.body.some((s) => s.id === p.statementId)) {
       return fail([{ path: "statementId", message: `no statement "${p.statementId}" in node "${p.nodeId}"` }]);
     }
-    const body = node.body.filter((s) => s.id !== p.statementId);
-    const nodes = story.nodes.map((n): StoryNode => (n.id === p.nodeId ? { ...n, body } : n));
-    return ok({ ...story, nodes });
-  },
-};
-
-// --- Flattened scalar statement-add commands (KTD-4/KTD-7) ---
-
-export const appendSayTask: Task = {
-  name: "append-say",
-  kind: "manipulate",
-  description: "Append a say line (who must be a declared character).",
-  params: z.object({ nodeId: slugId, who: slugId, text: z.string() }),
-  apply: (story, params) => {
-    const p = params as { nodeId: string; who: string; text: string; id?: string };
-    return appendTo(story, p.nodeId, { op: "say", who: p.who, text: p.text }, p.id);
-  },
-};
-
-export const appendShowTask: Task = {
-  name: "append-show",
-  kind: "manipulate",
-  description: "Append a show statement (sprite slot + asset, optional position).",
-  params: z.object({
-    nodeId: slugId,
-    sprite: slugId,
-    asset: slugId,
-    at: z.enum(["left", "center", "right"]).optional(),
-  }),
-  apply: (story, params) => {
-    const p = params as { nodeId: string; sprite: string; asset: string; at?: "left" | "center" | "right"; id?: string };
-    return appendTo(story, p.nodeId, { op: "show", sprite: p.sprite, asset: p.asset, at: p.at ?? "center" }, p.id);
-  },
-};
-
-export const appendChoiceTask: Task = {
-  name: "append-choice",
-  kind: "manipulate",
-  description: "Append a choice with labelled goto options.",
-  params: z.object({
-    nodeId: slugId,
-    prompt: z.string().optional(),
-    options: z.array(z.object({ label: z.string().min(1), goto: slugId })).min(1),
-  }),
-  apply: (story, params) => {
-    const p = params as { nodeId: string; prompt?: string; options: { label: string; goto: string }[]; id?: string };
-    const choice: Statement = {
-      op: "choice",
-      ...(p.prompt !== undefined ? { prompt: p.prompt } : {}),
-      options: p.options.map((o) => ({ label: o.label, goto: o.goto })),
-    };
-    return appendTo(story, p.nodeId, choice, p.id);
-  },
-};
-
-export const appendJumpTask: Task = {
-  name: "append-jump",
-  kind: "manipulate",
-  description: "Append a jump to another node.",
-  params: z.object({ nodeId: slugId, goto: slugId }),
-  apply: (story, params) => {
-    const p = params as { nodeId: string; goto: string; id?: string };
-    return appendTo(story, p.nodeId, { op: "jump", goto: p.goto }, p.id);
-  },
-};
-
-export const appendEndTask: Task = {
-  name: "append-end",
-  kind: "manipulate",
-  description: "Append an end statement (terminal — must be the node's last statement).",
-  params: z.object({ nodeId: slugId }),
-  apply: (story, params) => {
-    const p = params as { nodeId: string; id?: string };
-    return appendTo(story, p.nodeId, { op: "end" }, p.id);
-  },
-};
-
-// --- Insert before an existing statement (by id). Non-terminal kinds only: inserting a
-//     terminal (end/jump) mid-node would orphan everything after it (rejected by validateStory).
-//     To add a terminal, append it at the end. ---
-
-export const insertSayTask: Task = {
-  name: "insert-say",
-  kind: "manipulate",
-  description: "Insert a say line before an existing statement (target it by its id from get-node).",
-  params: z.object({ nodeId: slugId, beforeStatementId: z.string().min(1), who: slugId, text: z.string() }),
-  apply: (story, params) => {
-    const p = params as { nodeId: string; beforeStatementId: string; who: string; text: string; id?: string };
-    return insertBefore(story, p.nodeId, p.beforeStatementId, { op: "say", who: p.who, text: p.text }, p.id);
-  },
-};
-
-export const insertShowTask: Task = {
-  name: "insert-show",
-  kind: "manipulate",
-  description: "Insert a show statement before an existing statement (by id).",
-  params: z.object({
-    nodeId: slugId,
-    beforeStatementId: z.string().min(1),
-    sprite: slugId,
-    asset: slugId,
-    at: z.enum(["left", "center", "right"]).optional(),
-  }),
-  apply: (story, params) => {
-    const p = params as {
-      nodeId: string;
-      beforeStatementId: string;
-      sprite: string;
-      asset: string;
-      at?: "left" | "center" | "right";
-      id?: string;
-    };
-    return insertBefore(
-      story,
-      p.nodeId,
-      p.beforeStatementId,
-      { op: "show", sprite: p.sprite, asset: p.asset, at: p.at ?? "center" },
-      p.id,
-    );
-  },
-};
-
-export const insertChoiceTask: Task = {
-  name: "insert-choice",
-  kind: "manipulate",
-  description: "Insert a choice before an existing statement (by id).",
-  params: z.object({
-    nodeId: slugId,
-    beforeStatementId: z.string().min(1),
-    prompt: z.string().optional(),
-    options: z.array(z.object({ label: z.string().min(1), goto: slugId })).min(1),
-  }),
-  apply: (story, params) => {
-    const p = params as {
-      nodeId: string;
-      beforeStatementId: string;
-      prompt?: string;
-      options: { label: string; goto: string }[];
-      id?: string;
-    };
-    const choice: Statement = {
-      op: "choice",
-      ...(p.prompt !== undefined ? { prompt: p.prompt } : {}),
-      options: p.options.map((o) => ({ label: o.label, goto: o.goto })),
-    };
-    return insertBefore(story, p.nodeId, p.beforeStatementId, choice, p.id);
+    return ok(withBody(story, p.nodeId, node.body.filter((s) => s.id !== p.statementId)));
   },
 };

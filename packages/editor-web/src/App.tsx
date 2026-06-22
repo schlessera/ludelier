@@ -253,7 +253,10 @@ function ChatPanel({ session }: { session: EditorSession }): JSX.Element {
 function summarizeParams(params: unknown): string {
   if (!params || typeof params !== "object") return "";
   const p = params as Record<string, unknown>;
-  if (typeof p.statementId === "string") return `${p.nodeId ? `${String(p.nodeId)} · ` : ""}${p.statementId}`;
+  const node = typeof p.nodeId === "string" ? `${p.nodeId} · ` : "";
+  const stmt = p.statement as { op?: string } | undefined;
+  if (stmt?.op) return `${node}${stmt.op}`;
+  if (typeof p.statementId === "string") return `${node}${p.statementId}`;
   if (typeof p.id === "string") return p.id;
   if (typeof p.nodeId === "string") return String(p.nodeId);
   return JSON.stringify(p).slice(0, 60);

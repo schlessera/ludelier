@@ -46,14 +46,14 @@ describe("world subcommands", () => {
     expect(data.reachable).toContain("a");
   });
 
-  it("world edit append-say writes a new story + a log record; reload validates", async () => {
+  it("world edit add-statement writes a new story + a log record; reload validates", async () => {
     captureLog();
     const logPath = join(dir, "l.jsonl");
     const outPath = join(dir, "out.json");
     const code = await run([
-      "world", "edit", "append-say",
+      "world", "edit", "add-statement",
       "--story", storyPath,
-      "--json", JSON.stringify({ nodeId: "a", who: "n", text: "more" }),
+      "--json", JSON.stringify({ nodeId: "a", statement: { op: "say", who: "n", text: "more" } }),
       "--log", logPath,
       "-o", outPath,
     ]);
@@ -65,7 +65,7 @@ describe("world subcommands", () => {
   it("world undo after an edit restores the prior story", async () => {
     captureLog();
     const logPath = join(dir, "l.jsonl");
-    await run(["world", "edit", "append-end", "--story", storyPath, "--json", JSON.stringify({ nodeId: "a" }), "--log", logPath]);
+    await run(["world", "edit", "add-statement", "--story", storyPath, "--json", JSON.stringify({ nodeId: "a", statement: { op: "end" } }), "--log", logPath]);
     const outPath = join(dir, "out.json");
     expect(await run(["world", "undo", "--story", storyPath, "--log", logPath, "-o", outPath])).toBe(0);
     const out = JSON.parse(readFileSync(outPath, "utf8"));

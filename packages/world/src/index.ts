@@ -23,15 +23,10 @@ import { addCharacterTask } from "./manipulate/characters";
 import { registerAssetTask } from "./manipulate/assets";
 import { rewireGotoTask } from "./manipulate/flow";
 import {
+  addStatementTask,
+  updateStatementTask,
+  moveStatementTask,
   removeStatementTask,
-  appendSayTask,
-  appendShowTask,
-  appendChoiceTask,
-  appendJumpTask,
-  appendEndTask,
-  insertSayTask,
-  insertShowTask,
-  insertChoiceTask,
 } from "./manipulate/statements";
 
 /**
@@ -59,15 +54,11 @@ export function createWorld(): Registry {
   world.register(addCharacterTask);
   world.register(registerAssetTask);
   world.register(rewireGotoTask);
+  // Generic statement ops (one `add-statement` covers every kind — flat as the DSL grows).
+  world.register(addStatementTask);
+  world.register(updateStatementTask);
+  world.register(moveStatementTask);
   world.register(removeStatementTask);
-  world.register(appendSayTask);
-  world.register(appendShowTask);
-  world.register(appendChoiceTask);
-  world.register(appendJumpTask);
-  world.register(appendEndTask);
-  world.register(insertSayTask);
-  world.register(insertShowTask);
-  world.register(insertChoiceTask);
   return world;
 }
 
