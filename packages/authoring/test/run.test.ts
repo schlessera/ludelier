@@ -57,8 +57,8 @@ describe("runAgent (hermetic, scripted provider)", () => {
   it("builds a valid story branch and self-verifies", async () => {
     const provider = scriptedTools([
       [call("create-node", { id: "b" }, "1")],
-      [call("append-say", { nodeId: "b", who: "n", text: "branch" }, "2")],
-      [call("append-end", { nodeId: "b" }, "3")],
+      [call("add-statement", { nodeId: "b", statement: { op: "say", who: "n", text: "branch" } }, "2")],
+      [call("add-statement", { nodeId: "b", statement: { op: "end" } }, "3")],
       [call("rewire-goto", { nodeId: "a", statementId: "a#1", goto: "b" }, "4")], // a's [say, ...]; index 1 must be a jump/choice
       [call("done", {}, "5")],
     ]);
@@ -82,8 +82,8 @@ describe("runAgent (hermetic, scripted provider)", () => {
   it("keeps the story Zod-valid at every applied step", async () => {
     const provider = scriptedTools([
       [call("create-node", { id: "b" }, "1")],
-      [call("append-say", { nodeId: "b", who: "n", text: "x" }, "2")],
-      [call("append-end", { nodeId: "b" }, "3")],
+      [call("add-statement", { nodeId: "b", statement: { op: "say", who: "n", text: "x" } }, "2")],
+      [call("add-statement", { nodeId: "b", statement: { op: "end" } }, "3")],
       [call("done", {}, "4")],
     ]);
     const res = await runAgent({ provider, prompt: "x", story: base, runId: "run-1", maxSteps: 10 });
@@ -104,7 +104,7 @@ describe("runAgent (hermetic, scripted provider)", () => {
   it("revertRun on the result restores the pre-run story", async () => {
     const provider = scriptedTools([
       [call("create-node", { id: "b" }, "1")],
-      [call("append-end", { nodeId: "b" }, "2")],
+      [call("add-statement", { nodeId: "b", statement: { op: "end" } }, "2")],
       [call("done", {}, "3")],
     ]);
     const res = await runAgent({ provider, prompt: "x", story: base, runId: "run-1", maxSteps: 10 });
@@ -137,7 +137,7 @@ describe("runAgent (hermetic, scripted provider)", () => {
     const provider = scriptedTools([
       [call("create-node", { id: "bad id!" }, "1")], // rejected (invalid id)
       [call("create-node", { id: "b" }, "2")],
-      [call("append-end", { nodeId: "b" }, "3")],
+      [call("add-statement", { nodeId: "b", statement: { op: "end" } }, "3")],
       [call("rewire-goto", { nodeId: "a", statementId: "a#1", goto: "b" }, "4")],
       [call("done", {}, "5")],
     ]);
@@ -158,7 +158,7 @@ describe("runAgent (hermetic, scripted provider)", () => {
     };
     const provider = scriptedTools([
       [call("create-node", { id: "b" }, "1")],
-      [call("append-end", { nodeId: "b" }, "2")], // b ends, but nothing points to it yet
+      [call("add-statement", { nodeId: "b", statement: { op: "end" } }, "2")], // b ends, but nothing points to it yet
       [call("done", {}, "3")], // rejected: b is unreachable
       [call("rewire-goto", { nodeId: "a", statementId: "a#1", goto: "b" }, "4")], // wire a -> b
       [call("done", {}, "5")], // accepted
@@ -207,7 +207,7 @@ describe("runAgent (hermetic, scripted provider)", () => {
     const events: AgentEvent[] = [];
     const provider = scriptedTools([
       [call("create-node", { id: "b" }, "1")],
-      [call("append-end", { nodeId: "b" }, "2")],
+      [call("add-statement", { nodeId: "b", statement: { op: "end" } }, "2")],
       [call("rewire-goto", { nodeId: "a", statementId: "a#1", goto: "b" }, "3")],
       [call("done", {}, "4")],
     ]);
@@ -261,7 +261,7 @@ describe("runAgent (hermetic, scripted provider)", () => {
     let asked = 0;
     const provider = scriptedTools([
       [call("create-node", { id: "b" }, "1")],
-      [call("append-end", { nodeId: "b" }, "2")],
+      [call("add-statement", { nodeId: "b", statement: { op: "end" } }, "2")],
       [call("rewire-goto", { nodeId: "a", statementId: "a#1", goto: "b" }, "3")],
       [call("done", {}, "4")],
     ]);

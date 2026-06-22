@@ -35,11 +35,13 @@ packages/
             runner + JSONL trace record/replay (simulation.ts). No engine/DOM deps.
   world/    @ludelier/world — the agent world API (pure; no LLM/DOM). Self-describing
             task registry → describe() manifest; understand tasks (validate, graph,
-            list-*, get-node, find-references, simulate, diff) + manipulate spine
-            (create/delete-node, set-meta, add-character, register-asset,
-            append-{say,show,choice,jump,end}, remove-statement, rewire-goto) through
-            an always-valid applyEdit; event-sourced EditLog (fold/undo/redo/revert-run,
-            JSONL). {success} result envelope; canonical hashStory.
+            list-*, get-node, find-references, simulate, diff) + manipulate tasks
+            (create/delete-node, set-meta, add-character, register-asset, rewire-goto,
+            and GENERIC statement ops — add/update/move/remove-statement, where one
+            add-statement takes the whole Statement union so the toolset stays flat as
+            the DSL grows) through an always-valid applyEdit; statements carry stable
+            ids; event-sourced EditLog (fold/undo/redo/revert-run, JSONL). {success}
+            result envelope; canonical hashStory.
   cli/      @ludelier/cli — the agent harness. `validate | simulate | replay` +
             registry-derived `world describe|query|edit|undo|redo|export` + `author run`.
   authoring/ @ludelier/authoring — P2 AI authoring: `LLMProvider` seam (OpenAI +

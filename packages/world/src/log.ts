@@ -3,7 +3,6 @@ import type { Registry } from "./registry";
 import { applyEdit, validateWorld } from "./applyEdit";
 import { fail, ok, type Result } from "./result";
 import { normalizeStatementIds, nextStatementId } from "./statement-id";
-import { STATEMENT_CREATE_COMMANDS } from "./manipulate/statements";
 
 /**
  * One event in the authoring history. The canonical fold uses only these fields —
@@ -52,13 +51,16 @@ export class EditLog {
 
   /** Apply a command on the current story; append a record on success (log unchanged on failure). */
   apply(command: string, params: unknown, opts: { runId: string }): Result<Story> {
-    // A statement-creating command gets a deterministic stable id baked into the record (seq is
-    // the seq this record will take — post-truncation length === head). A re-applied/imported
-    // record already carries its id, so we never overwrite one.
+    // add-statement creates a new statement; bake a deterministic stable id into the record (seq
+    // is the seq this record will take — post-truncation length === head) so a refold reproduces
+    // it. A re-applied/imported record already carries its id, so we never overwrite one.
     const seq = this.head;
     let finalParams = params;
-    if (STATEMENT_CREATE_COMMANDS.has(command) && (params as { id?: unknown }).id === undefined) {
-      finalParams = { ...(params as Record<string, unknown>), id: nextStatementId(seq) };
+    if (command === "add-statement") {
+      const sp = params as { statement?: { id?: string } };
+      if (sp.statement && sp.statement.id === undefined) {
+        finalParams = { ...(params as Record<string, unknown>), statement: { ...sp.statement, id: nextStatementId(seq) } };
+      }
     }
     const res = applyEdit(this.world, this.currentStory(), command, finalParams);
     if (!res.success) return res;

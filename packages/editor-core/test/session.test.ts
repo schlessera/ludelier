@@ -89,7 +89,7 @@ describe("EditorSession", () => {
   it("round-trips through exportLog / fromLog", () => {
     const s = new EditorSession(base);
     s.edit("create-node", { id: "b" });
-    s.edit("append-end", { nodeId: "b" });
+    s.edit("add-statement", { nodeId: "b", statement: { op: "end" } });
     const restored = EditorSession.fromLog(base, s.exportLog());
     expect(restored.success).toBe(true);
     if (restored.success) {
@@ -114,7 +114,7 @@ describe("EditorSession", () => {
     });
     const provider = scriptedTools([
       [call("create-node", { id: "b" }, "1")],
-      [call("append-end", { nodeId: "b" }, "2")],
+      [call("add-statement", { nodeId: "b", statement: { op: "end" } }, "2")],
       [call("rewire-goto", { nodeId: "a", statementId: "a#1", goto: "b" }, "3")], // wire a -> b (reachable + ends)
       [call("done", {}, "4")],
     ]);
