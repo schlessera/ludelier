@@ -1,20 +1,15 @@
 import { validateStory, type Story } from "@ludelier/schema";
 import type { Registry } from "./registry";
 import { fail, parseParams, type Result } from "./result";
-import { sayWhoIssues } from "./manipulate/say-who-check";
 
 /**
- * The world's stricter validation gate (KTD-3): `validateStory` (Zod shape + the
- * cross-refs it checks) PLUS the world-local `say.who` check. Used both by `applyEdit`
- * and by `EditLog` import/base-load so the always-valid invariant covers the base and
- * imported logs, not only incremental edits.
+ * The world's validation gate. `say.who` (KTD-3) and statement-id uniqueness now live in
+ * `validateStory` itself, so there is a single definition of "valid" shared by authoring
+ * and the world — this is a thin alias kept for the call sites that gate edits, imports, and
+ * base-loads. Returns the schema `Result` so the envelope passes through untouched.
  */
 export function validateWorld(story: unknown): Result<Story> {
-  const res = validateStory(story);
-  if (!res.success) return res;
-  const extra = sayWhoIssues(res.data);
-  if (extra.length > 0) return fail(extra);
-  return res;
+  return validateStory(story);
 }
 
 /**

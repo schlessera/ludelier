@@ -1,9 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { initialState, reducer } from "../src/reducer";
+import { validateStory, type Story } from "@ludelier/schema";
+import { initialState, reducer, StatementBudgetError } from "../src/reducer";
+import { Simulation } from "../src/simulation";
 import type { Action } from "../src/state";
 import { loadCafe } from "./fixture";
 
 const story = loadCafe();
+
+function build(s: unknown): Story {
+  const res = validateStory(s);
+  if (!res.success) throw new Error("fixture invalid: " + JSON.stringify(res.issues));
+  return res.data;
+}
+
+/** Build a single-node story whose only choice option is gated by `cond`, then report enabled. */
+function optionEnabled(cond: unknown, setup: unknown[] = []): boolean {
+  const st = build({
+    meta: { id: "g", title: "g", start: "a", seed: 1 },
+    nodes: [
+      { id: "a", body: [...setup, { op: "choice", options: [{ label: "x", goto: "b", if: cond }] }] },
+      { id: "b", body: [{ op: "end" }] },
+    ],
+  });
+  const s = initialState(st, 1);
+  return s.pending.kind === "choice" && (s.pending.options[0]?.enabled ?? false);
+}
 
 describe("reducer", () => {
   it("starts on the first say line", () => {
@@ -77,5 +98,39 @@ describe("seeded RNG determinism", () => {
       expect(luck).toBeGreaterThanOrEqual(1);
       expect(luck).toBeLessThanOrEqual(6);
     }
+  });
+});
+
+describe("compare (no silent coercion)", () => {
+  it("eq/ne are strict on type", () => {
+    expect(optionEnabled({ var: "n", cmp: "eq", value: 5 }, [{ op: "set", var: "n", value: 5 }])).toBe(true);
+    expect(optionEnabled({ var: "n", cmp: "eq", value: 5 }, [{ op: "set", var: "n", value: "5" }])).toBe(false);
+  });
+
+  it("ordered ops compare numbers", () => {
+    expect(optionEnabled({ var: "n", cmp: "gte", value: 1 }, [{ op: "set", var: "n", value: 2 }])).toBe(true);
+    expect(optionEnabled({ var: "n", cmp: "lt", value: 1 }, [{ op: "set", var: "n", value: 0 }])).toBe(true);
+  });
+
+  it("ordered ops are false (not coerced) when an operand is not a number", () => {
+    // unset var
+    expect(optionEnabled({ var: "missing", cmp: "gt", value: 1 })).toBe(false);
+    // string var vs number — no NaN/lexical coercion
+    expect(optionEnabled({ var: "n", cmp: "gt", value: 1 }, [{ op: "set", var: "n", value: "9" }])).toBe(false);
+    // string vs string — ordered ops do NOT do lexical ordering
+    expect(optionEnabled({ var: "n", cmp: "gt", value: "a" }, [{ op: "set", var: "n", value: "b" }])).toBe(false);
+  });
+});
+
+describe("StatementBudgetError", () => {
+  it("is thrown on an infinite jump loop", () => {
+    const loop = build({
+      meta: { id: "x", title: "x", start: "a" },
+      nodes: [
+        { id: "a", body: [{ op: "jump", goto: "b" }] },
+        { id: "b", body: [{ op: "jump", goto: "a" }] },
+      ],
+    });
+    expect(() => new Simulation(loop, { seed: 1 })).toThrow(StatementBudgetError);
   });
 });

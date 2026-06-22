@@ -27,16 +27,23 @@ export class EditLog {
   private records: EditRecord[] = [];
   /** Number of active records: records[0..head-1] are folded into currentStory. */
   private head = 0;
+  /**
+   * Memoized fold at the current head (KTD-2 fix). `apply` sets it to the new tip directly (no
+   * refold), so a sequence of N edits is O(N), not O(N²). Head-moving ops that can't cheaply
+   * derive the tip (undo/redo/revertRun) clear it to `null`, forcing one lazy refold on next read.
+   */
+  private current: Story | null;
 
   constructor(world: Registry, baseStory: Story) {
     this.world = world;
     // Every statement carries a stable id from here on — so edits can target by identity, and
     // a refold reproduces identical ids (the appended ones are baked into each record's params).
     this.baseStory = normalizeStatementIds(baseStory);
+    this.current = this.baseStory; // head === 0 ⇒ current story is the base
   }
 
-  /** O(n) refold over the active records (KTD-2 — accepted for slice-1 sizes). */
-  currentStory(): Story {
+  /** O(n) refold over the active records — only run when the memo was invalidated. */
+  private fold(): Story {
     let story = this.baseStory;
     for (let i = 0; i < this.head; i++) {
       const rec = this.records[i]!;
@@ -47,6 +54,12 @@ export class EditLog {
       story = res.data;
     }
     return story;
+  }
+
+  /** The folded story at the current head (memoized — see `current`). */
+  currentStory(): Story {
+    if (this.current === null) this.current = this.fold();
+    return this.current;
   }
 
   /** Apply a command on the current story; append a record on success (log unchanged on failure). */
@@ -68,6 +81,7 @@ export class EditLog {
     if (this.head < this.records.length) this.records = this.records.slice(0, this.head);
     this.records.push({ seq: this.records.length, runId: opts.runId, command, params: finalParams });
     this.head = this.records.length;
+    this.current = res.data; // the applied result IS the new tip — keep the memo warm (no refold)
     return res;
   }
 
@@ -83,11 +97,13 @@ export class EditLog {
 
   undo(): Story {
     if (this.head > 0) this.head--;
+    this.current = null; // head moved back — refold lazily
     return this.currentStory();
   }
 
   redo(): Story {
     if (this.head < this.records.length) this.head++;
+    this.current = null; // head moved forward — refold lazily
     return this.currentStory();
   }
 
@@ -110,6 +126,7 @@ export class EditLog {
     }
     this.records = this.records.slice(0, firstIdx);
     this.head = this.records.length;
+    this.current = null; // history truncated — refold lazily
     return ok(this.currentStory());
   }
 

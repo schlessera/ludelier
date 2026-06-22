@@ -55,6 +55,37 @@ describe("validateStory", () => {
     }
   });
 
+  it("rejects say referencing an undeclared character (unified say.who check)", () => {
+    const res = validateStory({
+      meta: { id: "x", title: "x", start: "a" },
+      characters: [{ id: "mc", name: "MC" }],
+      nodes: [{ id: "a", body: [{ op: "say", who: "ghost", text: "hi" }, { op: "end" }] }],
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) expect(res.issues.some((i) => i.message.includes("ghost"))).toBe(true);
+  });
+
+  it("accepts say for a declared character", () => {
+    const res = validateStory({
+      meta: { id: "x", title: "x", start: "a" },
+      characters: [{ id: "mc", name: "MC" }],
+      nodes: [{ id: "a", body: [{ op: "say", who: "mc", text: "hi" }, { op: "end" }] }],
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it("rejects duplicate statement ids", () => {
+    const res = validateStory({
+      meta: { id: "x", title: "x", start: "a" },
+      nodes: [
+        { id: "a", body: [{ op: "jump", id: "dup", goto: "b" }] },
+        { id: "b", body: [{ op: "end", id: "dup" }] },
+      ],
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) expect(res.issues.some((i) => i.message.includes("duplicate statement id"))).toBe(true);
+  });
+
   it("exports a JSON Schema object (Zod v4)", () => {
     const schema = storyJsonSchema() as { type?: string; properties?: unknown };
     expect(schema.type).toBe("object");

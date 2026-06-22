@@ -8,6 +8,8 @@ export * from "./statement-id";
 export type { GraphReport } from "./understand/graph";
 export type { Reference } from "./understand/references";
 export { diffStories, type StoryDiff, type IdSetDiff } from "./understand/diff";
+export { exploreTask, type ExploreReport } from "./understand/explore";
+export { unwrittenVarReads, conditionTypeIssues } from "./understand/variables";
 
 import { Registry } from "./registry";
 import { validateTask } from "./understand/validate";
@@ -16,6 +18,7 @@ import { getNodeTask } from "./understand/get-node";
 import { findReferencesTask } from "./understand/references";
 import { graphTask } from "./understand/graph";
 import { simulateTask } from "./understand/simulate";
+import { exploreTask } from "./understand/explore";
 import { diffTask } from "./understand/diff";
 import { createNodeTask, deleteNodeTask } from "./manipulate/nodes";
 import { setMetaTask } from "./manipulate/meta";
@@ -43,9 +46,10 @@ export function createWorld(): Registry {
   world.register(listVariablesTask);
   world.register(getNodeTask);
   world.register(findReferencesTask);
-  // U10/U11/U12 — understand (graph, simulate, diff)
+  // U10/U11/U12 — understand (graph, simulate, diff) + explore (behavioural coverage)
   world.register(graphTask);
   world.register(simulateTask);
+  world.register(exploreTask);
   world.register(diffTask);
   // U3 — manipulate (the spine)
   world.register(createNodeTask);

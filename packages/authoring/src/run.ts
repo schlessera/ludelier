@@ -2,10 +2,13 @@ import {
   createWorld,
   EditLog,
   diffStories,
+  unwrittenVarReads,
+  conditionTypeIssues,
   type Registry,
   type EditRecord,
   type StoryDiff,
   type GraphReport,
+  type ExploreReport,
 } from "@ludelier/world";
 import type { Issue, Story } from "@ludelier/schema";
 import type { ChatMessage, CompletionResult, LLMProvider, ToolCall, ToolDefinition } from "./provider";
@@ -69,8 +72,21 @@ export type AgentEvent =
 export interface Verification {
   valid: boolean;
   issues: Issue[];
+  /** Static graph: nodes not reachable from start / nodes that cannot reach an `end`. */
   unreachable: string[];
   deadEnds: string[];
+  /** Vars read in a choice `if` but never written — silently always-false branches. */
+  unwrittenVars: string[];
+  /** Ordered comparisons that can't behave as intended (non-number operand) — type bugs. */
+  typeMismatches: string[];
+  /** Nodes where a *runtime* play-through stalls: a choice with every option gated off. */
+  stuck: string[];
+  /** Whether an ending is reachable by actually playing through (honours `if`). */
+  endReachable: boolean;
+  /** Whether playing the story throws (infinite jump loop) — caught, not propagated. */
+  crashed: boolean;
+  /** `reached` is real behavioural coverage (every explored path), not just the linear head;
+   *  `hash` is the seeded linear-run fingerprint (a determinism probe). */
   simulate: { hash: string; reached: string[] } | null;
 }
 
@@ -110,10 +126,19 @@ interface Gate {
 }
 
 function describeGate(baseline: Verification, current: Verification): Gate {
-  const newUnreachable = current.unreachable.filter((id) => !baseline.unreachable.includes(id));
-  const newDeadEnds = current.deadEnds.filter((id) => !baseline.deadEnds.includes(id));
+  const added = (cur: string[], base: string[]): string[] => cur.filter((id) => !base.includes(id));
+  const newUnreachable = added(current.unreachable, baseline.unreachable);
+  const newDeadEnds = added(current.deadEnds, baseline.deadEnds);
+  const newStuck = added(current.stuck, baseline.stuck);
+  const newUnwrittenVars = added(current.unwrittenVars, baseline.unwrittenVars);
+  const newTypeMismatches = added(current.typeMismatches, baseline.typeMismatches);
   const problems: string[] = [];
   for (const i of current.issues) problems.push(`invalid: ${i.path ? `${i.path} — ` : ""}${i.message}`);
+  if (current.crashed && !baseline.crashed) {
+    problems.push(
+      "the story crashes when played (the statement budget was exceeded — almost always an infinite jump loop). Break the cycle: give a node on the loop an `end`, or a choice/condition that exits.",
+    );
+  }
   for (const id of newUnreachable) {
     problems.push(
       `node "${id}" is unreachable from the start node — wire it in with rewire-goto, or add a choice/jump that targets it.`,
@@ -124,6 +149,17 @@ function describeGate(baseline: Verification, current: Verification): Gate {
       `node "${id}" is a dead end (it cannot reach an end statement) — append an end, or a jump toward a node that ends.`,
     );
   }
+  for (const id of newStuck) {
+    problems.push(
+      `node "${id}" has a choice whose every option is gated off (its \`if\` is never satisfiable at play time) — relax a condition or add an always-available option, or it is a runtime dead end.`,
+    );
+  }
+  for (const v of newUnwrittenVars) {
+    problems.push(
+      `variable "${v}" is read in a choice \`if\` but never set by any set/add/roll — it compares against nothing and the branch is always false. Add a set/add/roll for it, or fix the name.`,
+    );
+  }
+  for (const m of newTypeMismatches) problems.push(m);
   return { clean: current.valid && problems.length === 0, problems };
 }
 
@@ -159,11 +195,14 @@ function agentSystemPrompt(world: Registry): string {
     "4. Keep the graph healthy: every node you create must be reachable from the start node and must not",
     "   be a dead end (an ending node needs an `end`; a transit node needs a jump or choice out).",
     "5. Never remove an existing `end` statement unless you immediately replace it.",
-    "6. Before finishing, run the `graph` tool and confirm `unreachable` is empty and you introduced no",
-    "   new dead ends. Only then call the `done` tool.",
+    "6. Before finishing, run `graph` (reachability + dead ends) and `explore` (it plays through every",
+    "   path, honouring `if` conditions) and confirm `unreachable` is empty, you introduced no new dead",
+    "   ends, and an ending is reachable. Make sure any variable a choice `if` reads is set somewhere.",
+    "   Only then call the `done` tool.",
     "",
-    "The `done` tool is a gate: if your edits left a new unreachable or dead-end node it is rejected",
-    "with the problems listed — fix them and call `done` again.",
+    "The `done` tool is a gate: if your edits left a new unreachable / dead-end / self-gated node, or a",
+    "choice that reads a variable nothing ever sets, it is rejected with the problems listed — fix them",
+    "and call `done` again.",
     `Available world tasks: ${names}.`,
   ].join("\n");
 }
@@ -177,15 +216,31 @@ function defaultRunId(): string {
 function verify(world: Registry, story: Story): Verification {
   const v = world.get("validate")!.run!(story, {});
   const g = world.get("graph")!.run!(story, {});
-  const s = world.get("simulate")!.run!(story, { actions: [] });
+  // Behavioural coverage: actually play through every reachable path (honours `if`), instead of
+  // the old `simulate(actions:[])` that only walked the linear head and reported no real coverage.
+  // `explore` is crash-robust (it reports an infinite loop instead of throwing); the linear
+  // `simulate` is not, so guard it — a crashing story still yields a usable verification report.
+  const e = world.get("explore")!.run!(story, {});
   const graph = g.success ? (g.data as GraphReport) : null;
-  const sim = s.success ? (s.data as { hash: string; reached: string[] }) : null;
+  const explore = e.success ? (e.data as ExploreReport) : null;
+  let sim: { hash: string; reached: string[] } | null = null;
+  try {
+    const s = world.get("simulate")!.run!(story, { actions: [] });
+    if (s.success) sim = s.data as { hash: string; reached: string[] };
+  } catch {
+    sim = null; // the story loops at runtime — explore.crashed already captures it
+  }
   return {
     valid: v.success,
     issues: v.success ? [] : v.issues,
     unreachable: graph?.unreachable ?? [],
     deadEnds: graph?.deadEnds ?? [],
-    simulate: sim ? { hash: sim.hash, reached: sim.reached } : null,
+    unwrittenVars: unwrittenVarReads(story),
+    typeMismatches: conditionTypeIssues(story),
+    stuck: explore?.stuck ?? [],
+    endReachable: explore?.endReachable ?? false,
+    crashed: explore?.crashed ?? false,
+    simulate: sim ? { hash: sim.hash, reached: explore?.reached ?? sim.reached } : null,
   };
 }
 

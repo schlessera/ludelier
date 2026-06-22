@@ -126,4 +126,33 @@ describe("EditorSession", () => {
     expect(s.revertRun("chat-1").success).toBe(true);
     expect(s.story.nodes.some((n) => n.id === "b")).toBe(false);
   });
+
+  it("refuses human mutations while an agent chat run is in flight (run lock)", async () => {
+    let session!: EditorSession;
+    let busyDuringRun = false;
+    let editRefused = false;
+    let undoThrew = false;
+    const provider: LLMProvider = {
+      id: "mock",
+      capabilities: { jsonSchema: true, tools: true },
+      async complete() {
+        // Mid-run: the session must report busy and refuse concurrent human mutations.
+        busyDuringRun = session.busy;
+        editRefused = !session.edit("create-node", { id: "z" }).success;
+        try {
+          session.undo();
+        } catch {
+          undoThrew = true;
+        }
+        return { text: "", model: "mock", toolCalls: [call("done", {}, "d")] };
+      },
+    };
+    session = new EditorSession(base);
+    await session.chat("noop", { provider, runId: "r1" });
+    expect(busyDuringRun).toBe(true);
+    expect(editRefused).toBe(true);
+    expect(undoThrew).toBe(true);
+    expect(session.busy).toBe(false); // released after the run
+    expect(session.story.nodes.some((n) => n.id === "z")).toBe(false); // the refused edit did nothing
+  });
 });

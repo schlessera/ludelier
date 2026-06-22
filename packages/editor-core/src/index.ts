@@ -68,6 +68,14 @@ export class EditorSession {
   private log: EditLog;
   private readonly listeners = new Set<EditorListener>();
   private manualRuns = 0;
+  /**
+   * True while an agent `chat` run is in flight. The run mutates the session log across `await`
+   * boundaries (and snapshots a pre-run baseline for its diff / revert), so a concurrent human
+   * mutation would corrupt the run's accounting and break `revertRun`'s contiguous-tail rule.
+   * The mutator methods refuse while busy; reads stay allowed. A UI should also disable its
+   * edit controls during a run (see `busy`).
+   */
+  private running = false;
 
   /** Wrap an already-validated story. Throws if the story is invalid (validate before calling). */
   constructor(initial: Story, opts: { world?: Registry } = {}) {
@@ -127,6 +135,11 @@ export class EditorSession {
     return validateStory(this.story);
   }
 
+  /** Whether an agent chat run is in flight (mutations are refused; UI should disable edits). */
+  get busy(): boolean {
+    return this.running;
+  }
+
   get canUndo(): boolean {
     return this.log.canUndo();
   }
@@ -146,6 +159,7 @@ export class EditorSession {
    * cleanly). Returns the `{success}` envelope; the log and story are unchanged on failure.
    */
   edit(command: string, params: unknown = {}): Result<Story> {
+    if (this.running) return fail([{ path: "session", message: "busy with an agent run — edit refused until it finishes or is interrupted" }]);
     const t = this.world.get(command);
     if (!t) return fail([{ path: "command", message: `unknown task "${command}"` }]);
     if (t.kind !== "manipulate") return fail([{ path: "command", message: `"${command}" is not a manipulate task — use query()` }]);
@@ -155,12 +169,14 @@ export class EditorSession {
   }
 
   undo(): Story {
+    this.assertIdle("undo");
     const story = this.log.undo();
     this.emit();
     return story;
   }
 
   redo(): Story {
+    this.assertIdle("redo");
     const story = this.log.redo();
     this.emit();
     return story;
@@ -168,9 +184,17 @@ export class EditorSession {
 
   /** Drop a run's records (e.g. revert a chat turn). Only a contiguous tail run can be reverted. */
   revertRun(runId: string): Result<Story> {
+    if (this.running) return fail([{ path: "session", message: "busy with an agent run — revert refused until it finishes or is interrupted" }]);
     const res = this.log.revertRun(runId);
     if (res.success) this.emit();
     return res;
+  }
+
+  /** Throw if a chat run is in flight — for the mutators that don't return a `Result`. */
+  private assertIdle(op: string): void {
+    if (this.running) {
+      throw new Error(`EditorSession is busy with an agent run — ${op} is not allowed until it finishes or is interrupted`);
+    }
   }
 
   // ── agent chat ─────────────────────────────────────────────────────────────
@@ -180,24 +204,32 @@ export class EditorSession {
    * back exactly this turn. Self-correction (graph-health gate) applies as in `runAgent`.
    */
   async chat(prompt: string, opts: ChatOptions): Promise<AgentRunResult> {
-    const result = await runAgent({
-      provider: opts.provider,
-      prompt,
-      story: this.story,
-      world: this.world,
-      log: this.log,
-      model: opts.model,
-      maxSteps: opts.maxSteps,
-      checkpointEvery: opts.checkpointEvery,
-      onCheckpoint: opts.onCheckpoint,
-      signal: opts.signal,
-      onEvent: opts.onEvent,
-      temperature: opts.temperature,
-      runId: opts.runId,
-      system: opts.system,
-    });
-    this.emit();
-    return result;
+    // One run at a time: a second concurrent run (or a human edit) on the shared log would
+    // interleave records and corrupt each run's baseline/diff and `revertRun` contiguity.
+    this.assertIdle("chat");
+    this.running = true;
+    this.emit(); // let the UI reflect the busy state immediately
+    try {
+      return await runAgent({
+        provider: opts.provider,
+        prompt,
+        story: this.story,
+        world: this.world,
+        log: this.log,
+        model: opts.model,
+        maxSteps: opts.maxSteps,
+        checkpointEvery: opts.checkpointEvery,
+        onCheckpoint: opts.onCheckpoint,
+        signal: opts.signal,
+        onEvent: opts.onEvent,
+        temperature: opts.temperature,
+        runId: opts.runId,
+        system: opts.system,
+      });
+    } finally {
+      this.running = false;
+      this.emit();
+    }
   }
 
   // ── events + persistence ────────────────────────────────────────────────────

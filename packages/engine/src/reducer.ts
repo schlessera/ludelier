@@ -4,12 +4,30 @@ import { rollInt } from "./rng";
 
 const MAX_STEPS = 100_000;
 
+/**
+ * Thrown when statement execution exceeds the budget — in practice always an infinite jump
+ * loop (a cycle of nodes with no blocking/terminal statement). A named class so players can
+ * catch this specific failure and recover gracefully instead of hard-crashing on a bad story.
+ */
+export class StatementBudgetError extends Error {
+  constructor(public readonly node: string) {
+    super(`statement budget exceeded at node "${node}" (possible infinite jump loop)`);
+    this.name = "StatementBudgetError";
+  }
+}
+
 function nodeBody(story: Story, id: string) {
   const node = story.nodes.find((n) => n.id === id);
   if (!node) throw new Error(`node not found: "${id}"`);
   return node.body;
 }
 
+/**
+ * Evaluate a condition. eq/ne are strict (value type matters: "5" never equals 5). The ordered
+ * comparisons (gt/lt/gte/lte) are number-only by design: if either side is not a number the
+ * result is `false` — no silent string/undefined coercion. A non-numeric ordered comparison is
+ * almost always an authoring mistake, so `conditionTypeIssues` (world) flags it statically.
+ */
 function compare(a: VarValue | undefined, cmp: Condition["cmp"], b: VarValue): boolean {
   switch (cmp) {
     case "eq":
@@ -17,13 +35,15 @@ function compare(a: VarValue | undefined, cmp: Condition["cmp"], b: VarValue): b
     case "ne":
       return a !== b;
     case "gt":
-      return (a as number) > (b as number);
     case "lt":
-      return (a as number) < (b as number);
     case "gte":
-      return (a as number) >= (b as number);
-    case "lte":
-      return (a as number) <= (b as number);
+    case "lte": {
+      if (typeof a !== "number" || typeof b !== "number") return false;
+      if (cmp === "gt") return a > b;
+      if (cmp === "lt") return a < b;
+      if (cmp === "gte") return a >= b;
+      return a <= b;
+    }
   }
 }
 
@@ -42,7 +62,7 @@ function resolve(story: Story, state: GameState): GameState {
 
   for (;;) {
     if (steps++ > MAX_STEPS) {
-      throw new Error("statement budget exceeded (possible infinite jump loop)");
+      throw new StatementBudgetError(node);
     }
     const body = nodeBody(story, node);
     if (index >= body.length) {

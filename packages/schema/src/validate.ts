@@ -36,6 +36,16 @@ function crossRefIssues(story: Story): Issue[] {
     assetIds.add(asset.id);
   }
 
+  // say.who must name a declared character. Previously a world-only check; folded in here
+  // so authoring (generateStory) and the world's edit gate share one definition of valid.
+  const charIds = new Set(story.characters.map((c) => c.id));
+
+  // Statement ids are how edits target a statement by identity — duplicates make the target
+  // ambiguous, so they are rejected story-wide. This also backstops every id-generation path:
+  // any scheme that happens to collide is caught by the always-valid re-validate. Only present
+  // ids are checked (the id is optional on authored input; the world fills gaps before editing).
+  const stmtIds = new Set<string>();
+
   for (const node of story.nodes) {
     // A terminal statement (end / jump) ends the node; nothing may follow it (dead code).
     const term = node.body.findIndex((s) => s.op === "end" || s.op === "jump");
@@ -47,6 +57,15 @@ function crossRefIssues(story: Story): Issue[] {
     }
     node.body.forEach((stmt, i) => {
       const at = `nodes.${node.id}.body[${i}]`;
+      if (stmt.id !== undefined) {
+        if (stmtIds.has(stmt.id)) {
+          issues.push({ path: at, message: `duplicate statement id: "${stmt.id}"` });
+        }
+        stmtIds.add(stmt.id);
+      }
+      if (stmt.op === "say" && !charIds.has(stmt.who)) {
+        issues.push({ path: at, message: `say references unknown character "${stmt.who}"` });
+      }
       if (stmt.op === "jump" && !ids.has(stmt.goto)) {
         issues.push({ path: at, message: `jump to unknown node "${stmt.goto}"` });
       }
