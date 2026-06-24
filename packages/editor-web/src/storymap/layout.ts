@@ -1,4 +1,5 @@
 import dagre from "@dagrejs/dagre";
+import { compareStr } from "@ludelier/world";
 
 export interface PositionedNode {
   id: string;
@@ -20,12 +21,6 @@ const DEFAULTS: Required<LayoutOptions> = {
   nodeSep: 32,
 };
 
-function compareEdge(a: { from: string; to: string }, b: { from: string; to: string }): number {
-  if (a.from !== b.from) return a.from < b.from ? -1 : 1;
-  if (a.to !== b.to) return a.to < b.to ? -1 : 1;
-  return 0;
-}
-
 /**
  * Compute node positions with a layered (Sugiyama) top-down layout via dagre. Pure and
  * deterministic: ids and edges are sorted before they reach dagre, so the result is stable and
@@ -43,13 +38,14 @@ export function layoutGraph(
   g.setGraph({ rankdir: "TB", ranksep: o.rankSep, nodesep: o.nodeSep });
   g.setDefaultEdgeLabel(() => ({}));
 
-  const ids = [...nodeIds].sort();
+  const ids = [...nodeIds].sort(compareStr);
   for (const id of ids) g.setNode(id, { width: o.nodeWidth, height: o.nodeHeight });
 
   // Defensive: only wire edges whose endpoints are real nodes. validateStory guarantees
   // gotos resolve, but the map must never throw on a transient mid-edit state.
   const known = new Set(ids);
-  for (const e of [...edges].sort(compareEdge)) {
+  const sorted = [...edges].sort((a, b) => compareStr(a.from, b.from) || compareStr(a.to, b.to));
+  for (const e of sorted) {
     if (known.has(e.from) && known.has(e.to)) g.setEdge(e.from, e.to);
   }
 

@@ -24,7 +24,9 @@ export function App(): JSX.Element {
     return new EditorSession(v.data);
   }, []);
   const version = useSessionVersion(session);
-  const snap = session.snapshot();
+  // Snapshot recomputes validateStory + graph analysis, so memoize it on the session-change
+  // counter — selection clicks re-render App but don't re-run that work.
+  const snap = useMemo(() => session.snapshot(), [session, version]);
   const [selected, setSelected] = useState<string | null>(null);
   const selectedNode = snap.story.nodes.find((n) => n.id === selected) ?? null;
 

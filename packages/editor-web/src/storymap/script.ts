@@ -1,17 +1,5 @@
-import type { Statement, Condition } from "@ludelier/schema";
-
-const CMP: Record<Condition["cmp"], string> = {
-  eq: "==",
-  ne: "!=",
-  gt: ">",
-  lt: "<",
-  gte: ">=",
-  lte: "<=",
-};
-
-function cond(c: Condition): string {
-  return `${c.var} ${CMP[c.cmp]} ${String(c.value)}`;
-}
+import type { Statement } from "@ludelier/schema";
+import { formatCondition } from "@ludelier/world";
 
 /**
  * Render one statement as a readable, screenplay-style line. A one-way pretty-printer
@@ -38,13 +26,13 @@ export function renderStatement(s: Statement): string {
     case "jump":
       return `jump → ${s.goto}`;
     case "branch":
-      return `branch if ${cond(s.cond)} → ${s.goto}`;
+      return `branch if ${formatCondition(s.cond)} → ${s.goto}`;
     case "end":
       return "end";
     case "choice": {
       const head = s.prompt ? `choice "${s.prompt}"` : "choice";
       const opts = s.options.map(
-        (o) => `  → "${o.label}" → ${o.goto}${o.if ? ` (if ${cond(o.if)})` : ""}`,
+        (o) => `  → "${o.label}" → ${o.goto}${o.if ? ` (if ${formatCondition(o.if)})` : ""}`,
       );
       return [head, ...opts].join("\n");
     }
