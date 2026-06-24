@@ -6,6 +6,12 @@ export * from "./applyEdit";
 export * from "./log";
 export * from "./statement-id";
 export type { GraphReport } from "./understand/graph";
+export {
+  deriveFlowEdges,
+  formatCondition,
+  type FlowEdge,
+  type FlowEdgeKind,
+} from "./understand/flow-edges";
 export type { Reference } from "./understand/references";
 export { diffStories, type StoryDiff, type IdSetDiff } from "./understand/diff";
 export { exploreTask, type ExploreReport } from "./understand/explore";
@@ -17,6 +23,7 @@ import { listCharactersTask, listAssetsTask, listVariablesTask } from "./underst
 import { getNodeTask } from "./understand/get-node";
 import { findReferencesTask } from "./understand/references";
 import { graphTask } from "./understand/graph";
+import { flowEdgesTask } from "./understand/flow-edges";
 import { simulateTask } from "./understand/simulate";
 import { exploreTask } from "./understand/explore";
 import { diffTask } from "./understand/diff";
@@ -48,6 +55,7 @@ export function createWorld(): Registry {
   world.register(findReferencesTask);
   // U10/U11/U12 — understand (graph, simulate, diff) + explore (behavioural coverage)
   world.register(graphTask);
+  world.register(flowEdgesTask);
   world.register(simulateTask);
   world.register(exploreTask);
   world.register(diffTask);
