@@ -112,7 +112,9 @@ export function PlayCanvas({
     <section className="panel play">
       <h2>
         Play preview{" "}
-        <span className="muted">· {startNode ? `from ${startNode}` : "from start"}</span>
+        <span className="muted">
+          · {startNode ? `from ${startNode} · fresh state` : "from start"}
+        </span>
       </h2>
       {error ? (
         <p className="err">preview error: {error}</p>

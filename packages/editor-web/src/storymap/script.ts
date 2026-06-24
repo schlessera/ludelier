@@ -36,5 +36,10 @@ export function renderStatement(s: Statement): string {
       );
       return [head, ...opts].join("\n");
     }
+    default: {
+      // Exhaustiveness guard: a new statement op becomes a compile error here.
+      const _exhaustive: never = s;
+      return _exhaustive;
+    }
   }
 }

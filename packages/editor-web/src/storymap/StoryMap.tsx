@@ -29,7 +29,10 @@ export function StoryMap({
   return (
     <section className="panel map">
       <h2>
-        Story map <span className="muted">· {nodes.length} nodes · read-only</span>
+        Story map{" "}
+        <span className="muted">
+          · {snap.story.meta.title} · {nodes.length} nodes · read-only
+        </span>
       </h2>
       <div className="storymap">
         <ReactFlow

@@ -30,6 +30,12 @@ export function App(): JSX.Element {
   const [selected, setSelected] = useState<string | null>(null);
   const selectedNode = snap.story.nodes.find((n) => n.id === selected) ?? null;
 
+  // A selected node can vanish when the agent deletes it — drop the stale selection so the
+  // lens, preview, and map agree (and a later node reusing the id isn't silently re-selected).
+  useEffect(() => {
+    if (selected !== null && !snap.story.nodes.some((n) => n.id === selected)) setSelected(null);
+  }, [snap, selected]);
+
   return (
     <div className="app">
       <Toolbar session={session} snap={snap} />
