@@ -27,8 +27,23 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm lint
       - run: pnpm test
       - run: pnpm build:web
+      # The editor build is the ONLY thing that typechecks editor-web's .tsx (the root
+      # tsconfig includes only *.ts) — without this step, TSX breakage lands green.
+      - run: pnpm build:editor
+
+  fmt:
+    name: Formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: just fmt-check
 
   e2e:
     name: Playwright e2e

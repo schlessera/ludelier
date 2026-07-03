@@ -3,14 +3,26 @@ import { layoutGraph } from "../src/storymap/layout";
 
 describe("layoutGraph", () => {
   it("assigns exactly one finite position per node", () => {
-    const pos = layoutGraph(["a", "b", "c"], [{ from: "a", to: "b" }, { from: "b", to: "c" }]);
+    const pos = layoutGraph(
+      ["a", "b", "c"],
+      [
+        { from: "a", to: "b" },
+        { from: "b", to: "c" },
+      ],
+    );
     expect(pos.map((p) => p.id).sort()).toEqual(["a", "b", "c"]);
     expect(pos.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
   });
 
   it("lays out a graph with a cycle (back-edge) without throwing", () => {
     expect(() =>
-      layoutGraph(["a", "b"], [{ from: "a", to: "b" }, { from: "b", to: "a" }]),
+      layoutGraph(
+        ["a", "b"],
+        [
+          { from: "a", to: "b" },
+          { from: "b", to: "a" },
+        ],
+      ),
     ).not.toThrow();
   });
 
@@ -21,8 +33,20 @@ describe("layoutGraph", () => {
   });
 
   it("is deterministic and independent of input order", () => {
-    const a = layoutGraph(["x", "y", "z"], [{ from: "x", to: "y" }, { from: "y", to: "z" }]);
-    const b = layoutGraph(["z", "y", "x"], [{ from: "y", to: "z" }, { from: "x", to: "y" }]);
+    const a = layoutGraph(
+      ["x", "y", "z"],
+      [
+        { from: "x", to: "y" },
+        { from: "y", to: "z" },
+      ],
+    );
+    const b = layoutGraph(
+      ["z", "y", "x"],
+      [
+        { from: "y", to: "z" },
+        { from: "x", to: "y" },
+      ],
+    );
     expect(a).toEqual(b);
   });
 

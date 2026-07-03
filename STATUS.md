@@ -1,6 +1,6 @@
 # Ludelier — Project Status & Handoff
 
-_Last updated: 2026-06-21_
+_Last updated: 2026-07-03_
 
 A living snapshot of where the project stands: decisions, what's built, what's open, and the roadmap. For day-to-day conventions and the golden rules, see [AGENTS.md](./AGENTS.md). This file is the "where are we" overview.
 
@@ -52,19 +52,21 @@ packages/
   schema/         @ludelier/schema — Zod Story DSL, validateStory(), storyJsonSchema()/toJsonSchema()
   engine/         @ludelier/engine — reducer, seeded RNG, stable hash, Simulation, JSONL replay
   world/          @ludelier/world  — agent world API: task registry + describe(), understand/manipulate tasks, applyEdit, EditLog
-  cli/            @ludelier/cli    — validate | simulate | replay | world … | author run (the agent harness)
-  authoring/      @ludelier/authoring — P2: LLMProvider (+tool-calling) + generateStory() loop + worldTools/dispatch + runAgent
-  renderer-pixi/  @ludelier/renderer-pixi — PixiJS v8 display-only renderer
-  runtime-web/    @ludelier/runtime-web   — Vite + PWA player, Dexie autosave, window.__ludelier
+  cli/            @ludelier/cli    — validate | simulate | replay | world … | author run | mcp (the agent harness)
+  authoring/      @ludelier/authoring — P2: LLMProvider (+tool-calling, retry/backoff) + generateStory() loop + worldTools/dispatch + runAgent
+  editor-core/    @ludelier/editor-core — headless EditorSession (the parity façade; owns the EditLog + agent chat)
+  editor-web/     @ludelier/editor-web  — React editor: story map + script lens + play preview + edit forms + agent chat
+  renderer-pixi/  @ludelier/renderer-pixi — PixiJS v8 display-only renderer (dialog resolves character name/color)
+  runtime-web/    @ludelier/runtime-web   — Vite + PWA player, Dexie autosave (story-hash invalidated), window.__ludelier
 examples/         cafe.story.json + cafe.actions.json
 .agents/skills/   checked-in agent skills (image-generation)
 .changeset/       changesets config + pending changesets
-.github/workflows/ release.yml (Version PR), changeset-check.yml (PR gate), ci.yml (typecheck/unit/build + e2e)
+.github/workflows/ release.yml (Version PR), changeset-check.yml (PR gate), ci.yml (typecheck/lint/unit/builds + fmt + e2e)
 justfile          canonical task runner
 AGENTS.md         conventions + golden rules (CLAUDE.md imports it)
 ```
 
-Toolchain: Node ≥20 (CI 22, `.nvmrc`), pnpm 10.32, Zod 4, Vitest 2, Vite 5, PixiJS 8, Dexie 4, Playwright, tsx.
+Toolchain: Node ≥20 (CI 22, `.nvmrc`), pnpm 10.32, Zod 4, Vitest 2, Vite 5, React 18, PixiJS 8, Dexie 4, Playwright, tsx, Biome 2.5 (lint+format).
 
 ---
 
@@ -113,7 +115,13 @@ just changeset / just version
 - **Stable statement ids ✅ (2026-06-22):** statement edits target a statement by a stable `id`, not a fragile position (the agent kept miscounting indices and removing the wrong statement while the gate still read "clean"). Schema adds an optional statement `id`; the `EditLog` normalizes authored statements (`"<nodeId>#<i>"`) and bakes a monotonic `"s<seq>"` into each statement-creating record (deterministic refold, collision-safe, `hashStory` covers ids). `remove-statement`/`rewire-goto` now take a `statementId` (no more `index`); `get-node` + the inspector + the chat feed surface ids; the agent prompt steers targeting by id. Verified live: the agent removes exactly the right statement by id.
 - **Terminal-position rule + insert-* ✅ (2026-06-22):** appending to a node that already ends produced dead code after the `end` (silently "valid"). Now `validateStory` rejects any statement after a terminal (`end`/`jump`), so the gate catches it; and `insert-say`/`insert-show`/`insert-choice` add a statement **before** an existing one (by `beforeStatementId`). Verified live: "add closing sentences to the ending node" inserts them before the `end`. (`move-statement` still deferred.)
 - **Generic statement tools ✅ (2026-06-22):** replaced the flattened append-*/insert-* spine (heading toward 50+ tools as statement kinds grow) with **generic** ops — one `add-statement` takes the whole `Statement` discriminated union (Zod 4 `toJSONSchema` → clean `oneOf`), plus `update-statement` (replace in place), `move-statement` (reorder), `remove-statement`. Manipulate tools: **15 → 10, and flat** (a new statement kind adds zero tools). Reverses KTD-4/KTD-7's flattening, which was a hedge against weak LLM union-fill — **prototype-validated live**: gpt-5-mini filled the union across scene/show/say/end/choice correctly, clean+valid. Guardrails unchanged (terminal rule, say.who, cross-refs, stable-id injection at `params.statement.id`).
-- **Next:** manifest-driven edit **forms** (derive inspector edit controls from `describe()` JSON Schema — the parity payoff); an "add choice option" op (today a choice is rebuilt via remove+add); a Playwright smoke test for editor-web; preserve play position across edits.
+- **Story map + script lens + play-from-here ✅ (2026-06-24):** read-only branching **story map** in the editor (React Flow + dagre, deterministic layered layout, start/unreachable/dead-end badges, labelled choice/jump/branch edges via the world's `flow-edges` task — same derivation the agent queries), a **script lens** pretty-printing the selected node's statements, and **play-from-here** (engine `Simulation` gained an optional `start` node; fresh var state, documented v1 limitation). Plan: `docs/plans/2026-06-24-001-feat-editor-story-map-plan.md`.
+- **Repo review implemented ✅ (2026-07-03):** a full review (5 package deep-dives + market research) and the implementation of all its recommendations — tracking doc `docs/plans/2026-07-03-001-repo-review-implementation.md`. Highlights:
+  - **Correctness batch:** state hash now covers the transcript (text edits show in replay); `choice` is terminal in `validateStory` (dead code after it is rejected); `importLog` never throws (per-line parse + shape check); a clean `done` ends its tool batch (no `completed:true/ok:false`); Interrupt during a checkpoint aborts instead of hanging; provider retry/backoff (429/5xx/network, honours `Retry-After`), temperature only-when-set (authoring defaults 0.2), explicit `maxTokens`. Dialog renders the **declared character name in its color** (was: raw id in hardcoded blue — new `PixiRenderer.setCharacters()`; visual baseline regenerated); asset-load failures hit the player's error overlay; saves carry a story fingerprint + `SAVE_VERSION` and invalidate on mismatch; the editor preview's error state overlays (not replaces) the Pixi host; the chat checkpoints every 25 turns (the prompt was unreachable at the 500 default).
+  - **MCP server ✅:** `ludelier mcp <story.json> [--log <path>]` — stdio MCP server (`@modelcontextprotocol/sdk`) over the same registry: understand tasks as read tools, manipulate through an `EditLog`, story persisted atomically per edit, `describe`/`export-log` extras, one `mcp-<pid>` runId per session (so a whole session is `revertRun`-able). Claude Code / Cursor can drive the world API directly.
+  - **The parity payoff ✅ — manifest-driven edit forms:** a pure JSON-Schema→form-field derivation (`editor-web/src/forms/`) renders a working human form for **every** manipulate task from `describe()` (objects, enums, scalar unions, `oneOf` discriminated on `op`; raw-JSON fallback) submitting through `EditorSession.edit` — a new world task gets a human form with zero editor code. Entry points: per-statement edit/delete + add-statement in the script lens; all 10 tasks in the side panel. Plus **story open/save/new** and **edit-log import** (sessions swap at runtime).
+  - **Infra:** MIT `LICENSE` (was missing!); CI now builds editor-web (previously `.tsx` was never typechecked in CI) and gates **Biome** lint/format (`just lint`) + `just fmt-check`; `.gitignore` covers `.env`; `CONTRIBUTING.md`; README rewritten (it still claimed "P0 — no rendering yet").
+- **Next:** an "add/remove choice option" op (today a choice's options are edited via the raw-JSON field or remove+add); a Playwright smoke test for editor-web; preserve play position across edits; per-run revert from the History list; renderer DPI/`autoDensity` + keyboard input + unit tests; BYOK "remember key" opt-in.
 
 ### Tooling ✅
 - changesets (independent, version-PR only); `release.yml` + `changeset-check.yml`.
@@ -122,12 +130,13 @@ just changeset / just version
 
 ---
 
-## 7. Verification status (as of last run)
+## 7. Verification status (as of last run, 2026-07-03)
 
 - `pnpm typecheck` — clean (tsc strict).
-- `pnpm test` — 105/105 unit tests pass (engine/schema/world/authoring/cli; incl. the agent graph-feedback self-correction tests).
-- `pnpm build:web` — OK (PixiJS bundle + PWA SW, 19 precache entries incl. webp art, icons in manifest).
-- `just e2e` — 3/3 pass, ~4–6s (opening frame now renders the café bg + character sprite).
+- `pnpm lint` — clean (Biome, lint + format).
+- `pnpm test` — 234/234 unit tests pass across 28 files (schema/engine/world/authoring/cli incl. MCP/editor-core/editor-web forms+files).
+- `pnpm build:web` + `pnpm build:editor` — OK (both also gate CI).
+- `just e2e` — 3/3 pass (opening frame renders the café bg + sprite + **named** speaker; baseline regenerated for the name/color fix).
 
 ---
 
@@ -145,14 +154,12 @@ just changeset / just version
 
 ## 9. Open tasks / TODO
 
-- **P2 world API (slice 1 ✅ done):** `@ludelier/world` shipped — understand + manipulate tasks through a self-describing registry + always-valid `applyEdit` + event-sourced `EditLog`, exposed as LLM tools (`worldTools`/`dispatch` + `runAgent`) and registry-derived CLI subcommands. **Next:** wire the editor agentic chat (runtime-web → editor) to the world API; add the deferred manipulate commands (rename/update/move/remove variants, choice-option ops) as additive registry entries; bounded `simulate` all-paths.
-- **P2 validation (next):** live smoke test of `generateStory()` against a real provider/model (BYOK) + a CLI `author` command. Needs a current model slug (e.g. OpenRouter `openai/gpt-5-mini`).
-- ~~Backgrounds + character sprites~~ ✅ **done** — `scene`/`show`/`hide` + central `assets`, persistent `stage` in the hash, renderer preload + cover-fit bg + bottom-anchored sprites + crossfades. Demo art is committed under `runtime-web/public/assets/cafe/` (generated via the `image-generation` skill).
+- **P2 remaining:** `add/remove-choice-option` ops (a choice's options are edited via the form's raw-JSON field or remove+add today); Playwright smoke test for editor-web; preserve play position across edits; per-run revert from the History list; bounded `simulate` all-paths surfacing.
+- **Presentation debt** (from the 2026-07-03 review, tracked in `docs/plans/2026-07-03-001-repo-review-implementation.md` "not in scope"): renderer unit tests, DPI/`autoDensity`/resize, keyboard + ARIA input paths, save slots / backlog / text-speed UI, editor error boundary + responsive layout, BYOK "remember key" opt-in.
 - **Transitions** are a renderer-side crossfade only (instant data model; hash-neutral). Future polish: per-statement transition hints, named/custom sprite positions, sprite layering effects.
-- Consume pending changesets via the first Version PR → bumps all packages to **0.1.0** (currently all `0.0.0`). Pending: `p0-initial-core` (minor ×3), `p1-web-player` (renderer+runtime minor), `p1-pwa-icons` (runtime patch), `p1-scenes-sprites` (schema/engine/renderer/runtime minor, cli patch), `p2-authoring` (authoring minor).
-- Switch changelog generator to `@changesets/changelog-github` once on GitHub.
-- Add `just fmt-check` (and optionally `just`) to CI, if desired (needs installing `just` on the runner).
-- No linter/formatter configured yet (no ESLint/Prettier) — add if wanted.
+- Merge the open **Version Packages** PR (bumps 7 packages to `0.2.0`, renderer/runtime to `0.1.1`; the 2026-07-03 review changesets will roll into the next one). Requires the repo setting "Allow GitHub Actions to create and approve pull requests" (still pending — §13).
+- Switch changelog generator to `@changesets/changelog-github` once ready.
+- Live-provider smoke test in CI (needs a secrets story); transcript/`raw` redaction before persisting provenance; coverage reporting; Playwright browser caching in CI.
 - Move working directory `gaimez` → `ludelier` (deferred; user does between sessions).
 
 ---
@@ -203,7 +210,7 @@ bcafd0e chore: add justfile task runner; document as canonical entrypoint in AGE
 73938ea test(e2e): cover advance + choice via real canvas clicks
 ```
 
-- All packages at `0.0.0` (pre-release, `private: true`). First Version PR will bump to `0.1.0`.
+- All packages at `0.1.0` (pre-release, `private: true`); an open Version PR (`changeset-release/main`) holds the next round of bumps (7 packages → `0.2.0`, renderer/runtime → `0.1.1`), with the 2026-07-03 review changesets queued after it.
 
 ---
 

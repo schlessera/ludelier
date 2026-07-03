@@ -43,7 +43,10 @@ packages/
             ids; event-sourced EditLog (fold/undo/redo/revert-run, JSONL). {success}
             result envelope; canonical hashStory.
   cli/      @ludelier/cli — the agent harness. `validate | simulate | replay` +
-            registry-derived `world describe|query|edit|undo|redo|export` + `author run`.
+            registry-derived `world describe|query|edit|undo|redo|export` + `author run` +
+            `mcp <story> [--log <path>]` (stdio MCP server over the same registry so external
+            agents — Claude Code, Cursor, … — drive the world API; edits persist atomically
+            back to the story file).
   authoring/ @ludelier/authoring — P2 AI authoring: `LLMProvider` seam (OpenAI +
             OpenRouter, with tool-calling) + `generateStory()` self-correction loop +
             the agent loop (worldTools/dispatch tool adapter + autonomous `runAgent`,
@@ -52,17 +55,23 @@ packages/
             `EditorSession`: owns the Story as an EditLog, `query` (understand) + `edit`
             (manipulate) + undo/redo/revertRun + `change` events + exportLog/fromLog, and an
             agent `chat` loop bound to the session log. The parity surface the React shell binds to.
+  editor-web/ @ludelier/editor-web — the Vite + React editor shell bound to EditorSession:
+            agent chat panel (BYOK OpenRouter, streamed work feed, interrupt/checkpoint),
+            read-only story map (React Flow + dagre) + script lens + play-from-here,
+            embedded Pixi play preview, manifest-driven edit forms, story open/save.
   renderer-pixi/ @ludelier/renderer-pixi — display-only PixiJS v8 renderer
-            (cover-fit background, character sprites, dialog/choices, crossfades). No game logic.
+            (cover-fit background, character sprites — dialog resolves character id →
+            declared name/color — choices, crossfades). No game logic.
   runtime-web/   @ludelier/runtime-web — Vite + vite-plugin-pwa browser player.
             Validates + plays a Story, preloads assets, Dexie autosave, window.__ludelier handle.
 examples/   cafe.story.json + cafe.actions.json (sample VN).
 .agents/    checked-in agent skills (see "Agent skills"). Assets live in runtime-web/public/assets/.
 .changeset/ changesets config + pending changesets.
-.github/    release.yml (Version-PR flow) + changeset-check.yml (PR gate).
+.github/    ci.yml (typecheck/unit/builds/fmt/e2e) + release.yml (Version-PR flow) +
+            changeset-check.yml (PR gate).
 ```
 
-Internal deps use `workspace:*` (`engine` → `schema`; `world` → `schema` + `engine`; `authoring` → `schema` + `world`; `editor-core` → `schema` + `world` + `authoring`; `cli` → `schema` + `engine` + `world` + `authoring`; `renderer-pixi` → `engine`; `runtime-web` → all).
+Internal deps use `workspace:*` (`engine` → `schema`; `world` → `schema` + `engine`; `authoring` → `schema` + `world`; `editor-core` → `schema` + `world` + `authoring`; `cli` → `schema` + `engine` + `world` + `authoring`; `renderer-pixi` → `engine`; `runtime-web` → `schema` + `engine` + `renderer-pixi`; `editor-web` → all).
 
 ## Commands
 
@@ -73,7 +82,7 @@ just              # list all recipes (grouped: setup / dev / quality / release /
 just setup        # install deps + Playwright Chromium (first-time bootstrap)
 just demo         # play the example story headlessly via the CLI
 just dev          # web player dev server (Vite)
-just check        # fast gate: typecheck + unit tests + web build (no browser)
+just check        # fast gate: typecheck + unit tests + web & editor builds (no browser)
 just ci           # full gate incl. Playwright e2e
 just cli validate examples/cafe.story.json   # the agent harness; args forwarded
 just test [args]  # Vitest (units + replay determinism); just e2e for Playwright
@@ -119,9 +128,9 @@ Reusable, checked-in instructions for agents working in this repo live under `.a
 
 ## Phase roadmap
 
-- **P0 — DONE:** headless deterministic core + Zod DSL + CLI harness + Vitest. (current)
-- **P1:** PixiJS v8 renderer + Vite + vite-plugin-pwa shell + Howler audio + Dexie saves + Playwright visual tests (`--use-gl=swiftshader`, `data-ready` flag). Make `cafe.story.json` play in a browser.
-- **P2:** AI authoring + the **agent world API** — a multi-provider LLM adapter (OpenAI + OpenRouter) with a self-correction loop generates Zod-valid content, plus understand/manipulate tasks over the Story exposed as agent tools for the editor's agentic chat.
+- **P0 — DONE:** headless deterministic core + Zod DSL + CLI harness + Vitest.
+- **P1 — DONE:** PixiJS v8 renderer + Vite + vite-plugin-pwa shell + Dexie saves + Playwright visual tests (`--use-gl=swiftshader`, `data-ready` flag); `cafe.story.json` plays in a browser with backgrounds + sprites. (Howler audio deferred to P3 — no audio assets yet.)
+- **P2 — IN PROGRESS (current):** AI authoring + the **agent world API** — a multi-provider LLM adapter (OpenAI + OpenRouter) with a self-correction loop generates Zod-valid content, plus understand/manipulate tasks over the Story exposed as agent tools for the editor's agentic chat, as registry-derived CLI subcommands, and as an **MCP server** (`ludelier mcp`).
 - **P3:** AI asset generation behind a **multi-provider `AssetProvider`** (OpenAI + OpenRouter from v1, BYOK per provider, capability-routed so e.g. a transparent sprite picks a provider that supports it; registry for future fal.ai/ElevenLabs) + provenance pipeline (provider/model/seed sidecars, hash-cache).
 - **P4:** cloud seam — self-host BYOK config ↔ metered cloud per-tenant keys (per provider; the per-tenant provider key is the metering boundary). AI-gateway tool choice is deferred (not locked).
 

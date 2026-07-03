@@ -57,7 +57,7 @@ function resolve(story: Story, state: GameState): GameState {
   let vars = state.vars;
   let rng = state.rng;
   let stage = state.stage;
-  let transcript = state.transcript;
+  const transcript = state.transcript;
   let steps = 0;
 
   for (;;) {
@@ -150,7 +150,15 @@ function resolve(story: Story, state: GameState): GameState {
           done: false,
         };
       case "end":
-        return { cursor: { node, index }, vars, rng, stage, transcript, pending: { kind: "end" }, done: true };
+        return {
+          cursor: { node, index },
+          vars,
+          rng,
+          stage,
+          transcript,
+          pending: { kind: "end" },
+          done: true,
+        };
     }
   }
 }

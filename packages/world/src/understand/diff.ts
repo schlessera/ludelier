@@ -34,7 +34,11 @@ function diffById<T extends { id: string }>(from: T[], to: T[]): IdSetDiff {
     const y = tm.get(id);
     if (y && !eq(x, y)) changed.push(id);
   }
-  return { added: added.sort(compareStr), removed: removed.sort(compareStr), changed: changed.sort(compareStr) };
+  return {
+    added: added.sort(compareStr),
+    removed: removed.sort(compareStr),
+    changed: changed.sort(compareStr),
+  };
 }
 
 export function diffStories(from: Story, to: Story): StoryDiff {

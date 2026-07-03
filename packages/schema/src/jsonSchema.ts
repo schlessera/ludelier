@@ -10,9 +10,7 @@ import { StoryObject } from "./story";
 export function toJsonSchema(schema: unknown): unknown {
   const zAny = z as unknown as { toJSONSchema?: (s: unknown) => unknown };
   if (typeof zAny.toJSONSchema !== "function") {
-    throw new Error(
-      "z.toJSONSchema is unavailable — Zod v4+ is required for JSON Schema export",
-    );
+    throw new Error("z.toJSONSchema is unavailable — Zod v4+ is required for JSON Schema export");
   }
   return zAny.toJSONSchema(schema);
 }

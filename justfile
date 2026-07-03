@@ -71,6 +71,16 @@ dev-editor:
 typecheck:
     pnpm typecheck
 
+# Lint + format check (Biome). `just lint-fix` applies the safe fixes.
+[group('quality')]
+lint:
+    pnpm lint
+
+# Apply Biome's safe lint/format fixes in place.
+[group('quality')]
+lint-fix:
+    pnpm lint:fix
+
 # Run unit tests (Vitest). Forwards args: `just test --watch`
 [group('quality')]
 test *args:
@@ -100,9 +110,9 @@ e2e *args:
 e2e-update:
     {{ just_executable() }} e2e --update-snapshots
 
-# Fast pre-push gate: types + units + web build (no browser).
+# Fast pre-push gate: types + lint + units + web build (no browser).
 [group('quality')]
-check: typecheck test build
+check: typecheck lint test build
 
 # Full gate incl. browser e2e (mirrors CI).
 [group('quality')]

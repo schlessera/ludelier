@@ -18,7 +18,15 @@ const story: Story = {
   nodes: [
     {
       id: "start",
-      body: [{ op: "choice", options: [{ label: "b", goto: "b" }, { label: "stuck", goto: "stuck" }] }],
+      body: [
+        {
+          op: "choice",
+          options: [
+            { label: "b", goto: "b" },
+            { label: "stuck", goto: "stuck" },
+          ],
+        },
+      ],
     },
     { id: "b", body: [{ op: "jump", goto: "d" }] },
     { id: "d", body: [{ op: "end" }] },

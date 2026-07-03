@@ -41,7 +41,11 @@
           "op": "choice",
           "prompt": "The conversation could go either way.",
           "options": [
-            { "label": "Stay and talk", "goto": "ending_good", "if": { "var": "trust", "cmp": "gte", "value": 1 } },
+            {
+              "label": "Stay and talk",
+              "goto": "ending_good",
+              "if": { "var": "trust", "cmp": "gte", "value": 1 }
+            },
             { "label": "Ask about her day", "goto": "talk" },
             { "label": "Make an excuse and leave", "goto": "leave" }
           ]
@@ -53,13 +57,25 @@
       "body": [
         { "op": "show", "sprite": "her", "asset": "her", "at": "left" },
         { "op": "show", "sprite": "rin", "asset": "rin", "at": "right" },
-        { "op": "say", "who": "rin", "text": "Two cups of the house blend — on me. You two look like you needed a minute." },
-        { "op": "say", "who": "her", "text": "Thanks, Rin. It's been a strange day. You're the first person who's actually sat down." },
+        {
+          "op": "say",
+          "who": "rin",
+          "text": "Two cups of the house blend — on me. You two look like you needed a minute."
+        },
+        {
+          "op": "say",
+          "who": "her",
+          "text": "Thanks, Rin. It's been a strange day. You're the first person who's actually sat down."
+        },
         { "op": "add", "var": "trust", "amount": 1 },
         { "op": "say", "who": "mc", "text": "Then I'm glad I did." },
         { "op": "hide", "sprite": "rin" },
         { "op": "branch", "cond": { "var": "luck", "cmp": "gte", "value": 4 }, "goto": "ending_lucky" },
-        { "op": "say", "who": "narrator", "text": "You trade easy conversation until the afternoon light goes gold." },
+        {
+          "op": "say",
+          "who": "narrator",
+          "text": "You trade easy conversation until the afternoon light goes gold."
+        },
         { "op": "jump", "goto": "ending_good" }
       ]
     },
@@ -75,7 +91,11 @@
     {
       "id": "leave_regret",
       "body": [
-        { "op": "say", "who": "mc", "text": "You catch yourself at the door. You almost turn back — almost." },
+        {
+          "op": "say",
+          "who": "mc",
+          "text": "You catch yourself at the door. You almost turn back — almost."
+        },
         { "op": "jump", "goto": "ending_meh" }
       ]
     },
@@ -92,7 +112,11 @@
         { "op": "scene", "bg": "bg_street" },
         { "op": "show", "sprite": "her", "asset": "her", "at": "center" },
         { "op": "say", "who": "her", "text": "Walk me out? Same time tomorrow?" },
-        { "op": "say", "who": "narrator", "text": "The streetlights come on as you step outside together. Some afternoons rewrite the whole week. This was one." },
+        {
+          "op": "say",
+          "who": "narrator",
+          "text": "The streetlights come on as you step outside together. Some afternoons rewrite the whole week. This was one."
+        },
         { "op": "end" }
       ]
     },
@@ -100,7 +124,11 @@
       "id": "ending_meh",
       "body": [
         { "op": "scene", "bg": "bg_street" },
-        { "op": "say", "who": "narrator", "text": "The door closes behind you. The evening street is quiet, and the café forgets you." },
+        {
+          "op": "say",
+          "who": "narrator",
+          "text": "The door closes behind you. The evening street is quiet, and the café forgets you."
+        },
         { "op": "end" }
       ]
     }

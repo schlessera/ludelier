@@ -38,7 +38,15 @@ const story: Story = {
     },
     {
       id: "split",
-      body: [{ op: "choice", options: [{ label: "A", goto: "x" }, { label: "B", goto: "x" }] }],
+      body: [
+        {
+          op: "choice",
+          options: [
+            { label: "A", goto: "x" },
+            { label: "B", goto: "x" },
+          ],
+        },
+      ],
     },
     { id: "quiet", body: [{ op: "say", who: "n", text: "..." }, { op: "end" }] },
     { id: "checkout", body: [{ op: "end" }] },

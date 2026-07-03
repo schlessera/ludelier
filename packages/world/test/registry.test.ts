@@ -71,7 +71,10 @@ describe("result envelope", () => {
 
   it("passes a failing validateStory result through unchanged ({success:false})", () => {
     // The world envelope IS schema's ValidateResult shape, so no translation is needed.
-    const res = validateStory({ meta: { id: "x", title: "x", start: "missing" }, nodes: [{ id: "a", body: [] }] });
+    const res = validateStory({
+      meta: { id: "x", title: "x", start: "missing" },
+      nodes: [{ id: "a", body: [] }],
+    });
     expect(res.success).toBe(false);
     if (!res.success) {
       const passthrough = fail<Story>(res.issues);
@@ -101,17 +104,13 @@ describe("hashStory canonical form", () => {
   it("equals across default materialization (omitted characters/assets and show.at)", () => {
     const omitted = {
       meta: { id: "s", title: "S", start: "a" },
-      nodes: [
-        { id: "a", body: [{ op: "show", sprite: "h", asset: "h" }, { op: "end" }] },
-      ],
+      nodes: [{ id: "a", body: [{ op: "show", sprite: "h", asset: "h" }, { op: "end" }] }],
     } as unknown as Story;
     const materialized: Story = {
       meta: { id: "s", title: "S", start: "a" },
       characters: [],
       assets: [],
-      nodes: [
-        { id: "a", body: [{ op: "show", sprite: "h", asset: "h", at: "center" }, { op: "end" }] },
-      ],
+      nodes: [{ id: "a", body: [{ op: "show", sprite: "h", asset: "h", at: "center" }, { op: "end" }] }],
     };
     expect(hashStory(omitted)).toBe(hashStory(materialized));
   });

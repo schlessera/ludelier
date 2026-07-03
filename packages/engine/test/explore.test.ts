@@ -18,7 +18,13 @@ describe("exploreStory", () => {
           id: "a",
           body: [
             { op: "say", who: "n", text: "pick" },
-            { op: "choice", options: [{ label: "L", goto: "good" }, { label: "R", goto: "bad" }] },
+            {
+              op: "choice",
+              options: [
+                { label: "L", goto: "good" },
+                { label: "R", goto: "bad" },
+              ],
+            },
           ],
         },
         { id: "good", body: [{ op: "say", who: "n", text: "g" }, { op: "end" }] },
@@ -41,10 +47,13 @@ describe("exploreStory", () => {
         {
           id: "a",
           body: [
-            { op: "choice", options: [
-              { label: "open", goto: "locked", if: { var: "flag", cmp: "gte", value: 1 } },
-              { label: "leave", goto: "out" },
-            ] },
+            {
+              op: "choice",
+              options: [
+                { label: "open", goto: "locked", if: { var: "flag", cmp: "gte", value: 1 } },
+                { label: "leave", goto: "out" },
+              ],
+            },
           ],
         },
         { id: "locked", body: [{ op: "say", who: "n", text: "secret" }, { op: "end" }] },
@@ -97,7 +106,13 @@ describe("exploreStory", () => {
           id: "a",
           body: [
             { op: "say", who: "n", text: "again?" },
-            { op: "choice", options: [{ label: "loop", goto: "a" }, { label: "exit", goto: "b" }] },
+            {
+              op: "choice",
+              options: [
+                { label: "loop", goto: "a" },
+                { label: "exit", goto: "b" },
+              ],
+            },
           ],
         },
         { id: "b", body: [{ op: "end" }] },

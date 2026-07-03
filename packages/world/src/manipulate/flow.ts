@@ -23,7 +23,10 @@ export const rewireGotoTask: Task = {
     const node = story.nodes.find((n) => n.id === p.nodeId);
     if (!node) return fail([{ path: "nodeId", message: `unknown node "${p.nodeId}"` }]);
     const stmt = node.body.find((s) => s.id === p.statementId);
-    if (!stmt) return fail([{ path: "statementId", message: `no statement "${p.statementId}" in node "${p.nodeId}"` }]);
+    if (!stmt)
+      return fail([
+        { path: "statementId", message: `no statement "${p.statementId}" in node "${p.nodeId}"` },
+      ]);
 
     let next: Statement;
     if (stmt.op === "jump" || stmt.op === "branch") {
@@ -39,7 +42,9 @@ export const rewireGotoTask: Task = {
         options: stmt.options.map((o, j) => (j === p.optionIndex ? { ...o, goto: p.goto } : o)),
       };
     } else {
-      return fail([{ path: "statementId", message: `statement "${p.statementId}" is not a jump, branch, or choice` }]);
+      return fail([
+        { path: "statementId", message: `statement "${p.statementId}" is not a jump, branch, or choice` },
+      ]);
     }
 
     const body = node.body.map((s) => (s.id === p.statementId ? next : s));

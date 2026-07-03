@@ -25,9 +25,9 @@ describe("renderStatement", () => {
 
   it("renders flow statements with targets and conditions", () => {
     expect(renderStatement({ op: "jump", goto: "end" })).toBe("jump → end");
-    expect(
-      renderStatement({ op: "branch", cond: { var: "mood", cmp: "lt", value: 0 }, goto: "sulk" }),
-    ).toBe("branch if mood < 0 → sulk");
+    expect(renderStatement({ op: "branch", cond: { var: "mood", cmp: "lt", value: 0 }, goto: "sulk" })).toBe(
+      "branch if mood < 0 → sulk",
+    );
     expect(renderStatement({ op: "end" })).toBe("end");
   });
 
@@ -41,9 +41,7 @@ describe("renderStatement", () => {
       ],
     };
     const out = renderStatement(choice);
-    expect(out).toBe(
-      'choice "What now?"\n  → "Pay now" → checkout\n  → "Run a tab" → tab (if gold > 5)',
-    );
+    expect(out).toBe('choice "What now?"\n  → "Pay now" → checkout\n  → "Run a tab" → tab (if gold > 5)');
   });
 
   it("is deterministic", () => {

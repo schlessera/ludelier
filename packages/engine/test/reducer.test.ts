@@ -29,7 +29,11 @@ function optionEnabled(cond: unknown, setup: unknown[] = []): boolean {
 describe("reducer", () => {
   it("starts on the first say line", () => {
     const s = initialState(story, 42);
-    expect(s.pending).toEqual({ kind: "say", who: "narrator", text: "A quiet café. She looks up as you enter." });
+    expect(s.pending).toEqual({
+      kind: "say",
+      who: "narrator",
+      text: "A quiet café. She looks up as you enter.",
+    });
     expect(s.done).toBe(false);
   });
 
@@ -67,7 +71,13 @@ describe("reducer", () => {
         {
           id: "a",
           body: [
-            { op: "choice", options: [{ label: "locked", goto: "b", if: { var: "trust", cmp: "gte", value: 1 } }, { label: "open", goto: "b" }] },
+            {
+              op: "choice",
+              options: [
+                { label: "locked", goto: "b", if: { var: "trust", cmp: "gte", value: 1 } },
+                { label: "open", goto: "b" },
+              ],
+            },
           ],
         },
         { id: "b", body: [{ op: "end" }] },
@@ -104,7 +114,9 @@ describe("seeded RNG determinism", () => {
 describe("compare (no silent coercion)", () => {
   it("eq/ne are strict on type", () => {
     expect(optionEnabled({ var: "n", cmp: "eq", value: 5 }, [{ op: "set", var: "n", value: 5 }])).toBe(true);
-    expect(optionEnabled({ var: "n", cmp: "eq", value: 5 }, [{ op: "set", var: "n", value: "5" }])).toBe(false);
+    expect(optionEnabled({ var: "n", cmp: "eq", value: 5 }, [{ op: "set", var: "n", value: "5" }])).toBe(
+      false,
+    );
   });
 
   it("ordered ops compare numbers", () => {
@@ -116,9 +128,13 @@ describe("compare (no silent coercion)", () => {
     // unset var
     expect(optionEnabled({ var: "missing", cmp: "gt", value: 1 })).toBe(false);
     // string var vs number — no NaN/lexical coercion
-    expect(optionEnabled({ var: "n", cmp: "gt", value: 1 }, [{ op: "set", var: "n", value: "9" }])).toBe(false);
+    expect(optionEnabled({ var: "n", cmp: "gt", value: 1 }, [{ op: "set", var: "n", value: "9" }])).toBe(
+      false,
+    );
     // string vs string — ordered ops do NOT do lexical ordering
-    expect(optionEnabled({ var: "n", cmp: "gt", value: "a" }, [{ op: "set", var: "n", value: "b" }])).toBe(false);
+    expect(optionEnabled({ var: "n", cmp: "gt", value: "a" }, [{ op: "set", var: "n", value: "b" }])).toBe(
+      false,
+    );
   });
 });
 

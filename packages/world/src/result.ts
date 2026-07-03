@@ -8,9 +8,7 @@ import type { Issue } from "@ludelier/schema";
  * (`@ludelier/authoring`'s `AuthorResult` uses `ok`; that is a separate, pre-existing
  * shape — the `success → ok` mapping happens once, at the `runAgent` boundary.)
  */
-export type Result<T> =
-  | { success: true; data: T }
-  | { success: false; issues: Issue[] };
+export type Result<T> = { success: true; data: T } | { success: false; issues: Issue[] };
 
 export function ok<T>(data: T): Result<T> {
   return { success: true, data };

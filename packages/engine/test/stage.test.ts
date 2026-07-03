@@ -76,7 +76,15 @@ describe("stage (scene/show/hide)", () => {
     const res = validateStory({
       meta: { id: "h", title: "h", start: "a", seed: 1 },
       characters: [{ id: "n", name: "Narrator" }],
-      nodes: [{ id: "a", body: [{ op: "hide", sprite: "ghost" }, { op: "say", who: "n", text: "ok" }] }],
+      nodes: [
+        {
+          id: "a",
+          body: [
+            { op: "hide", sprite: "ghost" },
+            { op: "say", who: "n", text: "ok" },
+          ],
+        },
+      ],
     });
     if (!res.success) throw new Error("invalid: " + JSON.stringify(res.issues));
     const s = initialState(res.data, 1);

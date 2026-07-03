@@ -85,9 +85,7 @@ describe("buildStoryGraph", () => {
   it("gives every node a finite position", () => {
     const { nodes } = buildStoryGraph(snap, null);
     expect(nodes).toHaveLength(story.nodes.length);
-    expect(nodes.every((n) => Number.isFinite(n.position.x) && Number.isFinite(n.position.y))).toBe(
-      true,
-    );
+    expect(nodes.every((n) => Number.isFinite(n.position.x) && Number.isFinite(n.position.y))).toBe(true);
   });
 
   it("flags the selected node", () => {

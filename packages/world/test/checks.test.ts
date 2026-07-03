@@ -17,10 +17,18 @@ describe("unwrittenVarReads", () => {
     const story = build({
       meta: { id: "x", title: "x", start: "a" },
       nodes: [
-        { id: "a", body: [{ op: "choice", options: [
-          { label: "go", goto: "b", if: { var: "ghost", cmp: "gte", value: 1 } },
-          { label: "stay", goto: "b" },
-        ] }] },
+        {
+          id: "a",
+          body: [
+            {
+              op: "choice",
+              options: [
+                { label: "go", goto: "b", if: { var: "ghost", cmp: "gte", value: 1 } },
+                { label: "stay", goto: "b" },
+              ],
+            },
+          ],
+        },
         { id: "b", body: [{ op: "end" }] },
       ],
     });
@@ -31,10 +39,16 @@ describe("unwrittenVarReads", () => {
     const story = build({
       meta: { id: "x", title: "x", start: "a" },
       nodes: [
-        { id: "a", body: [
-          { op: "set", var: "trust", value: 0 },
-          { op: "choice", options: [{ label: "go", goto: "b", if: { var: "trust", cmp: "gte", value: 0 } }] },
-        ] },
+        {
+          id: "a",
+          body: [
+            { op: "set", var: "trust", value: 0 },
+            {
+              op: "choice",
+              options: [{ label: "go", goto: "b", if: { var: "trust", cmp: "gte", value: 0 } }],
+            },
+          ],
+        },
         { id: "b", body: [{ op: "end" }] },
       ],
     });
@@ -51,9 +65,15 @@ describe("conditionTypeIssues", () => {
     const story = build({
       meta: { id: "x", title: "x", start: "a" },
       nodes: [
-        { id: "a", body: [{ op: "choice", options: [
-          { label: "go", goto: "b", if: { var: "n", cmp: "gt", value: "high" } },
-        ] }] },
+        {
+          id: "a",
+          body: [
+            {
+              op: "choice",
+              options: [{ label: "go", goto: "b", if: { var: "n", cmp: "gt", value: "high" } }],
+            },
+          ],
+        },
         { id: "b", body: [{ op: "end" }] },
       ],
     });
@@ -65,10 +85,13 @@ describe("conditionTypeIssues", () => {
     const story = build({
       meta: { id: "x", title: "x", start: "a" },
       nodes: [
-        { id: "a", body: [
-          { op: "set", var: "n", value: "lots" },
-          { op: "choice", options: [{ label: "go", goto: "b", if: { var: "n", cmp: "gte", value: 1 } }] },
-        ] },
+        {
+          id: "a",
+          body: [
+            { op: "set", var: "n", value: "lots" },
+            { op: "choice", options: [{ label: "go", goto: "b", if: { var: "n", cmp: "gte", value: 1 } }] },
+          ],
+        },
         { id: "b", body: [{ op: "end" }] },
       ],
     });
@@ -79,10 +102,13 @@ describe("conditionTypeIssues", () => {
     const story = build({
       meta: { id: "x", title: "x", start: "a" },
       nodes: [
-        { id: "a", body: [
-          { op: "set", var: "n", value: 3 },
-          { op: "choice", options: [{ label: "go", goto: "b", if: { var: "n", cmp: "gte", value: 1 } }] },
-        ] },
+        {
+          id: "a",
+          body: [
+            { op: "set", var: "n", value: 3 },
+            { op: "choice", options: [{ label: "go", goto: "b", if: { var: "n", cmp: "gte", value: 1 } }] },
+          ],
+        },
         { id: "b", body: [{ op: "end" }] },
       ],
     });
@@ -132,7 +158,11 @@ describe("branch in the world API", () => {
     const g = world.get("graph")!.run!(story(), {});
     expect(g.success).toBe(true);
     if (g.success) {
-      const report = g.data as { edges: { from: string; to: string }[]; unreachable: string[]; deadEnds: string[] };
+      const report = g.data as {
+        edges: { from: string; to: string }[];
+        unreachable: string[];
+        deadEnds: string[];
+      };
       expect(report.edges).toContainEqual({ from: "a", to: "lucky" });
       expect(report.unreachable).toEqual([]);
       expect(report.deadEnds).toEqual([]);

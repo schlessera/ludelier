@@ -12,7 +12,13 @@ const base: Story = {
   characters: [{ id: "narrator", name: "Narrator" }],
   assets: [],
   nodes: [
-    { id: "a", body: [{ op: "say", who: "narrator", text: "hi" }, { op: "jump", goto: "b" }] },
+    {
+      id: "a",
+      body: [
+        { op: "say", who: "narrator", text: "hi" },
+        { op: "jump", goto: "b" },
+      ],
+    },
     { id: "b", body: [{ op: "end" }] },
     // a non-terminal node (no end/jump) — safe to append to without orphaning anything.
     { id: "c", body: [{ op: "say", who: "narrator", text: "c" }] },
@@ -27,7 +33,12 @@ function expectOk(res: Result<Story>): Story {
 describe("applyEdit — spine builds a valid story", () => {
   it("create-node + add-statement (say, end) yields a story validateStory accepts", () => {
     let s = expectOk(applyEdit(world, base, "create-node", { id: "d" }));
-    s = expectOk(applyEdit(world, s, "add-statement", { nodeId: "d", statement: { op: "say", who: "narrator", text: "yo" } }));
+    s = expectOk(
+      applyEdit(world, s, "add-statement", {
+        nodeId: "d",
+        statement: { op: "say", who: "narrator", text: "yo" },
+      }),
+    );
     s = expectOk(applyEdit(world, s, "add-statement", { nodeId: "d", statement: { op: "end" } }));
     const node = s.nodes.find((n) => n.id === "d")!;
     expect(node.body.map((st) => st.op)).toEqual(["say", "end"]);
@@ -35,15 +46,27 @@ describe("applyEdit — spine builds a valid story", () => {
 
   it("rewire-goto repoints a choice option and re-validates", () => {
     // add a choice to non-terminal node c → c = [say, choice]; the choice's fallback id is "c#g1".
-    let s = expectOk(applyEdit(world, base, "add-statement", { nodeId: "c", statement: { op: "choice", options: [{ label: "go", goto: "a" }] } }));
-    s = expectOk(applyEdit(world, s, "rewire-goto", { nodeId: "c", statementId: "c#g1", goto: "b", optionIndex: 0 }));
+    let s = expectOk(
+      applyEdit(world, base, "add-statement", {
+        nodeId: "c",
+        statement: { op: "choice", options: [{ label: "go", goto: "a" }] },
+      }),
+    );
+    s = expectOk(
+      applyEdit(world, s, "rewire-goto", { nodeId: "c", statementId: "c#g1", goto: "b", optionIndex: 0 }),
+    );
     const choice = s.nodes.find((n) => n.id === "c")!.body[1]!;
     expect(choice.op === "choice" && choice.options[0]!.goto).toBe("b");
   });
 
   it("register-asset then add-statement show referencing it passes", () => {
     let s = expectOk(applyEdit(world, base, "register-asset", { id: "bg", src: "/bg.webp" }));
-    s = expectOk(applyEdit(world, s, "add-statement", { nodeId: "c", statement: { op: "show", sprite: "slot", asset: "bg" } }));
+    s = expectOk(
+      applyEdit(world, s, "add-statement", {
+        nodeId: "c",
+        statement: { op: "show", sprite: "slot", asset: "bg" },
+      }),
+    );
     const show = s.nodes.find((n) => n.id === "c")!.body[1]!;
     expect(show.op === "show" && show.at).toBe("center");
   });
@@ -51,14 +74,30 @@ describe("applyEdit — spine builds a valid story", () => {
 
 describe("generic statement ops (add / update / move / remove)", () => {
   it("add-statement fills any statement kind from the discriminated union", () => {
-    let s = expectOk(applyEdit(world, base, "add-statement", { nodeId: "c", statement: { op: "set", var: "score", value: 1 } }));
-    s = expectOk(applyEdit(world, s, "add-statement", { nodeId: "c", statement: { op: "roll", var: "d6", min: 1, max: 6 } }));
+    let s = expectOk(
+      applyEdit(world, base, "add-statement", {
+        nodeId: "c",
+        statement: { op: "set", var: "score", value: 1 },
+      }),
+    );
+    s = expectOk(
+      applyEdit(world, s, "add-statement", {
+        nodeId: "c",
+        statement: { op: "roll", var: "d6", min: 1, max: 6 },
+      }),
+    );
     expect(s.nodes.find((n) => n.id === "c")!.body.map((st) => st.op)).toEqual(["say", "set", "roll"]);
   });
 
   it("update-statement replaces a statement in place, keeping its id", () => {
     const normalized = normalizeStatementIds(base);
-    const s = expectOk(applyEdit(world, normalized, "update-statement", { nodeId: "c", statementId: "c#0", statement: { op: "say", who: "narrator", text: "rewritten" } }));
+    const s = expectOk(
+      applyEdit(world, normalized, "update-statement", {
+        nodeId: "c",
+        statementId: "c#0",
+        statement: { op: "say", who: "narrator", text: "rewritten" },
+      }),
+    );
     const stmt = s.nodes.find((n) => n.id === "c")!.body[0]!;
     expect(stmt.op === "say" && stmt.text).toBe("rewritten");
     expect(stmt.id).toBe("c#0");
@@ -66,7 +105,12 @@ describe("generic statement ops (add / update / move / remove)", () => {
 
   it("move-statement reorders a statement to before another", () => {
     // c = [say c#0]; add a say, then move it before c#0.
-    let s = expectOk(applyEdit(world, normalizeStatementIds(base), "add-statement", { nodeId: "c", statement: { op: "say", who: "narrator", text: "second" } }));
+    let s = expectOk(
+      applyEdit(world, normalizeStatementIds(base), "add-statement", {
+        nodeId: "c",
+        statement: { op: "say", who: "narrator", text: "second" },
+      }),
+    );
     const added = s.nodes.find((n) => n.id === "c")!.body[1]!.id!;
     s = expectOk(applyEdit(world, s, "move-statement", { nodeId: "c", statementId: added, before: "c#0" }));
     const texts = s.nodes.find((n) => n.id === "c")!.body.map((st) => (st.op === "say" ? st.text : st.op));
@@ -83,13 +127,19 @@ describe("applyEdit — always-valid invariant rejects bad edits, story untouche
   });
 
   it("add-statement show referencing an unregistered asset fails", () => {
-    const res = applyEdit(world, base, "add-statement", { nodeId: "c", statement: { op: "show", sprite: "slot", asset: "ghost" } });
+    const res = applyEdit(world, base, "add-statement", {
+      nodeId: "c",
+      statement: { op: "show", sprite: "slot", asset: "ghost" },
+    });
     expect(res.success).toBe(false);
     if (!res.success) expect(res.issues.some((i) => /unknown asset/.test(i.message))).toBe(true);
   });
 
   it("add-statement say with an unknown who fails the say.who check; story untouched", () => {
-    const res = applyEdit(world, base, "add-statement", { nodeId: "c", statement: { op: "say", who: "ghost", text: "x" } });
+    const res = applyEdit(world, base, "add-statement", {
+      nodeId: "c",
+      statement: { op: "say", who: "ghost", text: "x" },
+    });
     expect(res.success).toBe(false);
     if (!res.success) expect(res.issues.some((i) => /unknown character "ghost"/.test(i.message))).toBe(true);
     expect(base.nodes.find((n) => n.id === "c")!.body).toHaveLength(1);
@@ -104,7 +154,10 @@ describe("applyEdit — always-valid invariant rejects bad edits, story untouche
 
 describe("terminal-position invariant + insert", () => {
   it("adding after a node's end is rejected (the statement would never run)", () => {
-    const res = applyEdit(world, base, "add-statement", { nodeId: "b", statement: { op: "say", who: "narrator", text: "after the end" } });
+    const res = applyEdit(world, base, "add-statement", {
+      nodeId: "b",
+      statement: { op: "say", who: "narrator", text: "after the end" },
+    });
     expect(res.success).toBe(false);
     if (!res.success) expect(res.issues.some((i) => /terminal/.test(i.message))).toBe(true);
   });
@@ -112,13 +165,23 @@ describe("terminal-position invariant + insert", () => {
   it("add-statement with `before` places a line before an existing statement (e.g. before the end)", () => {
     // normalize so the end carries its id "b#0"; insert a line before it.
     const normalized = normalizeStatementIds(base);
-    const s = expectOk(applyEdit(world, normalized, "add-statement", { nodeId: "b", before: "b#0", statement: { op: "say", who: "narrator", text: "last words" } }));
+    const s = expectOk(
+      applyEdit(world, normalized, "add-statement", {
+        nodeId: "b",
+        before: "b#0",
+        statement: { op: "say", who: "narrator", text: "last words" },
+      }),
+    );
     const body = s.nodes.find((n) => n.id === "b")!.body;
     expect(body.map((st) => st.op)).toEqual(["say", "end"]); // say now precedes the end
   });
 
   it("add-statement before a nonexistent statement id fails", () => {
-    const res = applyEdit(world, normalizeStatementIds(base), "add-statement", { nodeId: "b", before: "nope", statement: { op: "say", who: "narrator", text: "x" } });
+    const res = applyEdit(world, normalizeStatementIds(base), "add-statement", {
+      nodeId: "b",
+      before: "nope",
+      statement: { op: "say", who: "narrator", text: "x" },
+    });
     expect(res.success).toBe(false);
   });
 });
@@ -129,7 +192,10 @@ describe("applyEdit — invalid params rejected before apply", () => {
   });
 
   it("add-statement with a malformed statement is rejected", () => {
-    expect(applyEdit(world, base, "add-statement", { nodeId: "c", statement: { op: "say", who: "narrator" } }).success).toBe(false);
+    expect(
+      applyEdit(world, base, "add-statement", { nodeId: "c", statement: { op: "say", who: "narrator" } })
+        .success,
+    ).toBe(false);
   });
 
   it("unknown command name is rejected", () => {

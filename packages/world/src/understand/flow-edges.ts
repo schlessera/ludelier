@@ -86,8 +86,7 @@ export function deriveFlowEdges(story: Story): FlowEdge[] {
 export const flowEdgesTask: Task = {
   name: "flow-edges",
   kind: "understand",
-  description:
-    "Labelled node transitions (choice/jump/branch) with edge labels and conditional flags.",
+  description: "Labelled node transitions (choice/jump/branch) with edge labels and conditional flags.",
   params: z.object({}),
   run: (story) => ok(deriveFlowEdges(story)),
 };

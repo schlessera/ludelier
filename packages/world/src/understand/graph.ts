@@ -52,31 +52,35 @@ function buildGraph(story: Story): GraphReport {
   while (fwd.length) {
     const node = byId.get(fwd.shift()!);
     if (!node) continue;
-    for (const t of outgoing(node)) if (!reachable.has(t)) {
-      reachable.add(t);
-      fwd.push(t);
-    }
+    for (const t of outgoing(node))
+      if (!reachable.has(t)) {
+        reachable.add(t);
+        fwd.push(t);
+      }
   }
 
   // Reverse reachability to an end: start from end-bearing nodes, walk predecessors.
   const preds = new Map<string, string[]>();
-  for (const node of story.nodes) for (const t of outgoing(node)) {
-    const list = preds.get(t);
-    if (list) list.push(node.id);
-    else preds.set(t, [node.id]);
-  }
+  for (const node of story.nodes)
+    for (const t of outgoing(node)) {
+      const list = preds.get(t);
+      if (list) list.push(node.id);
+      else preds.set(t, [node.id]);
+    }
   const canReachEnd = new Set<string>();
   const rev: string[] = [];
-  for (const node of story.nodes) if (node.body.some((s) => s.op === "end")) {
-    canReachEnd.add(node.id);
-    rev.push(node.id);
-  }
+  for (const node of story.nodes)
+    if (node.body.some((s) => s.op === "end")) {
+      canReachEnd.add(node.id);
+      rev.push(node.id);
+    }
   while (rev.length) {
     const v = rev.shift()!;
-    for (const u of preds.get(v) ?? []) if (!canReachEnd.has(u)) {
-      canReachEnd.add(u);
-      rev.push(u);
-    }
+    for (const u of preds.get(v) ?? [])
+      if (!canReachEnd.has(u)) {
+        canReachEnd.add(u);
+        rev.push(u);
+      }
   }
 
   const allIds = story.nodes.map((n) => n.id).sort(compareStr);

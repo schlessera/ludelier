@@ -7,7 +7,13 @@ const story: Story = {
   characters: [{ id: "n", name: "N" }],
   assets: [],
   nodes: [
-    { id: "intro", body: [{ op: "set", var: "gold", value: 10 }, { op: "jump", goto: "gate" }] },
+    {
+      id: "intro",
+      body: [
+        { op: "set", var: "gold", value: 10 },
+        { op: "jump", goto: "gate" },
+      ],
+    },
     {
       id: "gate",
       body: [

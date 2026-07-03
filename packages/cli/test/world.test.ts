@@ -51,11 +51,17 @@ describe("world subcommands", () => {
     const logPath = join(dir, "l.jsonl");
     const outPath = join(dir, "out.json");
     const code = await run([
-      "world", "edit", "add-statement",
-      "--story", storyPath,
-      "--json", JSON.stringify({ nodeId: "a", statement: { op: "say", who: "n", text: "more" } }),
-      "--log", logPath,
-      "-o", outPath,
+      "world",
+      "edit",
+      "add-statement",
+      "--story",
+      storyPath,
+      "--json",
+      JSON.stringify({ nodeId: "a", statement: { op: "say", who: "n", text: "more" } }),
+      "--log",
+      logPath,
+      "-o",
+      outPath,
     ]);
     expect(code).toBe(0);
     expect(validateStory(JSON.parse(readFileSync(outPath, "utf8"))).success).toBe(true);
@@ -65,7 +71,17 @@ describe("world subcommands", () => {
   it("world undo after an edit restores the prior story", async () => {
     captureLog();
     const logPath = join(dir, "l.jsonl");
-    await run(["world", "edit", "add-statement", "--story", storyPath, "--json", JSON.stringify({ nodeId: "a", statement: { op: "end" } }), "--log", logPath]);
+    await run([
+      "world",
+      "edit",
+      "add-statement",
+      "--story",
+      storyPath,
+      "--json",
+      JSON.stringify({ nodeId: "a", statement: { op: "end" } }),
+      "--log",
+      logPath,
+    ]);
     const outPath = join(dir, "out.json");
     expect(await run(["world", "undo", "--story", storyPath, "--log", logPath, "-o", outPath])).toBe(0);
     const out = JSON.parse(readFileSync(outPath, "utf8"));

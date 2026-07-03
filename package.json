@@ -8,6 +8,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
     "test": "vitest run",
     "test:watch": "vitest",
     "cli": "tsx packages/cli/src/index.ts",
@@ -22,6 +24,7 @@
     "e2e": "playwright test"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.2",
     "@changesets/cli": "^2.31.0",
     "@playwright/test": "^1.48.0",
     "@types/node": "^22.7.0",

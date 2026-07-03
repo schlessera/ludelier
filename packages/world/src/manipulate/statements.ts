@@ -34,7 +34,8 @@ export const addStatementTask: Task = {
     const stmt: StatementT = { ...p.statement, id: p.statement.id ?? `${p.nodeId}#g${node.body.length}` };
     if (p.before === undefined) return ok(withBody(story, p.nodeId, [...node.body, stmt]));
     const idx = node.body.findIndex((s) => s.id === p.before);
-    if (idx === -1) return fail([{ path: "before", message: `no statement "${p.before}" in node "${p.nodeId}"` }]);
+    if (idx === -1)
+      return fail([{ path: "before", message: `no statement "${p.before}" in node "${p.nodeId}"` }]);
     return ok(withBody(story, p.nodeId, [...node.body.slice(0, idx), stmt, ...node.body.slice(idx)]));
   },
 };
@@ -50,7 +51,9 @@ export const updateStatementTask: Task = {
     const node = story.nodes.find((n) => n.id === p.nodeId);
     if (!node) return fail([{ path: "nodeId", message: `unknown node "${p.nodeId}"` }]);
     if (!node.body.some((s) => s.id === p.statementId)) {
-      return fail([{ path: "statementId", message: `no statement "${p.statementId}" in node "${p.nodeId}"` }]);
+      return fail([
+        { path: "statementId", message: `no statement "${p.statementId}" in node "${p.nodeId}"` },
+      ]);
     }
     const body = node.body.map((s) => (s.id === p.statementId ? { ...p.statement, id: p.statementId } : s));
     return ok(withBody(story, p.nodeId, body));
@@ -68,7 +71,10 @@ export const moveStatementTask: Task = {
     const node = story.nodes.find((n) => n.id === p.nodeId);
     if (!node) return fail([{ path: "nodeId", message: `unknown node "${p.nodeId}"` }]);
     const from = node.body.findIndex((s) => s.id === p.statementId);
-    if (from === -1) return fail([{ path: "statementId", message: `no statement "${p.statementId}" in node "${p.nodeId}"` }]);
+    if (from === -1)
+      return fail([
+        { path: "statementId", message: `no statement "${p.statementId}" in node "${p.nodeId}"` },
+      ]);
     const moving = node.body[from]!;
     const without = node.body.filter((_, i) => i !== from);
     let body: StatementT[];
@@ -76,7 +82,8 @@ export const moveStatementTask: Task = {
       body = [...without, moving];
     } else {
       const idx = without.findIndex((s) => s.id === p.before);
-      if (idx === -1) return fail([{ path: "before", message: `no statement "${p.before}" in node "${p.nodeId}"` }]);
+      if (idx === -1)
+        return fail([{ path: "before", message: `no statement "${p.before}" in node "${p.nodeId}"` }]);
       body = [...without.slice(0, idx), moving, ...without.slice(idx)];
     }
     return ok(withBody(story, p.nodeId, body));
@@ -93,8 +100,16 @@ export const removeStatementTask: Task = {
     const node = story.nodes.find((n) => n.id === p.nodeId);
     if (!node) return fail([{ path: "nodeId", message: `unknown node "${p.nodeId}"` }]);
     if (!node.body.some((s) => s.id === p.statementId)) {
-      return fail([{ path: "statementId", message: `no statement "${p.statementId}" in node "${p.nodeId}"` }]);
+      return fail([
+        { path: "statementId", message: `no statement "${p.statementId}" in node "${p.nodeId}"` },
+      ]);
     }
-    return ok(withBody(story, p.nodeId, node.body.filter((s) => s.id !== p.statementId)));
+    return ok(
+      withBody(
+        story,
+        p.nodeId,
+        node.body.filter((s) => s.id !== p.statementId),
+      ),
+    );
   },
 };

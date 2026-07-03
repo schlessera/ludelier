@@ -8,3 +8,12 @@ test-results/
 playwright-report/
 blob-report/
 .playwright/
+
+# Local secrets/config — the justfile dotenv-loads .env (BYOK provider keys); never commit one.
+.env
+.env.*
+*.local
+
+# Editor/IDE state
+.idea/
+.vscode/

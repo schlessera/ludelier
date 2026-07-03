@@ -8,12 +8,16 @@ interface TestHandle {
   transcript: { who: string; text: string }[];
 }
 
-const ready = (page: Page) =>
-  page.waitForFunction(() => document.documentElement.dataset.ready === "1");
-const handle = (page: Page) => page.evaluate(() => (window as unknown as { __ludelier: TestHandle }).__ludelier);
-const advance = (page: Page) => page.evaluate(() => (window as unknown as { __ludelier: { advance(): void } }).__ludelier.advance());
+const ready = (page: Page) => page.waitForFunction(() => document.documentElement.dataset.ready === "1");
+const handle = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __ludelier: TestHandle }).__ludelier);
+const advance = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __ludelier: { advance(): void } }).__ludelier.advance());
 const choose = (page: Page, i: number) =>
-  page.evaluate((idx) => (window as unknown as { __ludelier: { choose(i: number): void } }).__ludelier.choose(idx), i);
+  page.evaluate(
+    (idx) => (window as unknown as { __ludelier: { choose(i: number): void } }).__ludelier.choose(idx),
+    i,
+  );
 
 test("plays the café story to the good ending", async ({ page }) => {
   await page.goto("/?new");
@@ -37,9 +41,7 @@ test("plays the café story to the good ending", async ({ page }) => {
   await advance(page); // dismiss ending line -> end
   h = await handle(page);
   expect(h.done).toBe(true);
-  expect(h.transcript.map((t) => t.text)).toContain(
-    "You talk for hours. The coffee goes cold, happily.",
-  );
+  expect(h.transcript.map((t) => t.text)).toContain("You talk for hours. The coffee goes cold, happily.");
 });
 
 test("renders the opening frame", async ({ page }) => {
@@ -70,7 +72,5 @@ test("advances and chooses via real canvas clicks", async ({ page }) => {
 
   // First choice button is centered; for 2 options its center is ~(640, 320).
   await clickAt(640, 320);
-  await expect
-    .poll(async () => (await handle(page)).pending)
-    .toMatchObject({ kind: "say", who: "mc" });
+  await expect.poll(async () => (await handle(page)).pending).toMatchObject({ kind: "say", who: "mc" });
 });
