@@ -5,10 +5,14 @@ import { validateStory, type Issue, type Story } from "@ludelier/schema";
 import { Simulation, replayTrace, type Action } from "@ludelier/engine";
 import { createWorld, EditLog, importLog, parseParams, type Registry, type Result } from "@ludelier/world";
 import { runAgent, providersFromEnv } from "@ludelier/authoring";
+import { serveMcp } from "./mcp";
 
 /** A CLI failure carrying the process exit code to return (no process.exit in run()). */
 class CliError extends Error {
-  constructor(message: string, readonly code: number) {
+  constructor(
+    message: string,
+    readonly code: number,
+  ) {
     super(message);
   }
 }
@@ -116,7 +120,10 @@ function runWorld(rest: string[]): number {
       console.log(loadLog(world, values.story, values.log).export());
       return 0;
     default:
-      throw new CliError("usage: world <describe|query|edit|undo|redo|export> --story <f> [--json '<args>'] [--log l] [-o out]", 2);
+      throw new CliError(
+        "usage: world <describe|query|edit|undo|redo|export> --story <f> [--json '<args>'] [--log l] [-o out]",
+        2,
+      );
   }
 }
 
@@ -167,7 +174,8 @@ async function runAuthor(rest: string[]): Promise<number> {
     maxSteps,
     signal: ac.signal,
     onEvent: (e) => {
-      if (e.kind === "edit") console.error(`  ${e.success ? "+" : "✗"} ${e.command} ${JSON.stringify(e.params)}`);
+      if (e.kind === "edit")
+        console.error(`  ${e.success ? "+" : "✗"} ${e.command} ${JSON.stringify(e.params)}`);
       else if (e.kind === "verify" && !e.clean) console.error(`  ⚠ ${e.problems.join("; ")}`);
     },
   });
@@ -236,9 +244,25 @@ export async function run(argv: string[]): Promise<number> {
         return runWorld(rest);
       case "author":
         return await runAuthor(rest);
+      case "mcp": {
+        const { values, positionals } = parseArgs({
+          args: rest,
+          options: { log: { type: "string" } },
+          allowPositionals: true,
+        });
+        const storyPath = positionals[0];
+        if (!storyPath) throw new CliError("usage: mcp <story.json> [--log <log.jsonl>]", 2);
+        // The story FILE is the source of truth (rewritten after every successful edit), so
+        // the session log starts fresh on it — an existing --log file is output, not input.
+        const world = createWorld();
+        return await serveMcp(world, new EditLog(world, loadStory(storyPath)), {
+          storyPath,
+          logPath: values.log,
+        });
+      }
       default:
         console.error(
-          "usage: ludelier <validate|simulate|replay|world|author> … (run `ludelier world describe` for the task list)",
+          "usage: ludelier <validate|simulate|replay|world|author|mcp> … (run `ludelier world describe` for the task list)",
         );
         return 2;
     }

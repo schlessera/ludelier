@@ -10,6 +10,7 @@
     "@ludelier/authoring": "workspace:*",
     "@ludelier/engine": "workspace:*",
     "@ludelier/schema": "workspace:*",
-    "@ludelier/world": "workspace:*"
+    "@ludelier/world": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0"
   }
 }
