@@ -27,6 +27,15 @@ export interface AssetRef {
   src: string;
 }
 
+/** A speaking character. Structurally matches @ludelier/schema's `Character`. */
+export interface CharacterRef {
+  id: string;
+  name: string;
+  color?: string;
+}
+
+const DEFAULT_NAME_COLOR = "#6ab0ff";
+
 const W = 1280;
 const H = 720;
 const PAD = 48;
@@ -72,6 +81,9 @@ export class PixiRenderer {
   private bgSprite: Sprite | null = null;
   private currentBg: string | null = null;
   private readonly sprites = new Map<string, ShownSprite>();
+  /** id → declared character, so dialog shows the display name in the character's color
+   *  (the engine's `pending.who` is the character *id*, not a name). */
+  private characters = new Map<string, CharacterRef>();
 
   private tweens: Tween[] = [];
   private animating = false;
@@ -121,6 +133,12 @@ export class PixiRenderer {
     if (assets.length === 0) return;
     Assets.add(assets.map((a) => ({ alias: a.id, src: a.src })));
     await Assets.load(assets.map((a) => a.id));
+  }
+
+  /** Declare the story's characters so dialog can resolve id → display name + color.
+   *  Call again whenever the story changes (the editor's preview does, per edit). */
+  setCharacters(characters: readonly CharacterRef[]): void {
+    this.characters = new Map(characters.map((c) => [c.id, c]));
   }
 
   render(state: GameState): void {
@@ -197,8 +215,10 @@ export class PixiRenderer {
     for (const child of this.uiLayer.removeChildren()) child.destroy();
 
     if (p.kind === "say") {
+      // `p.who` is the character id; render the declared display name in its color.
+      const speaker = this.characters.get(p.who);
       this.addAdvanceLayer();
-      this.addDialog(p.who, p.text);
+      this.addDialog(speaker?.name ?? p.who, p.text, speaker?.color ?? DEFAULT_NAME_COLOR);
       this.addHint("click to continue ▸");
     } else if (p.kind === "choice") {
       if (p.prompt) this.addDialog("", p.prompt);
@@ -217,7 +237,7 @@ export class PixiRenderer {
     this.uiLayer.addChild(layer);
   }
 
-  private addDialog(who: string, text: string): void {
+  private addDialog(who: string, text: string, nameColor: string = DEFAULT_NAME_COLOR): void {
     const boxH = 220;
     const y = H - boxH - PAD;
     this.uiLayer.addChild(
@@ -227,7 +247,7 @@ export class PixiRenderer {
     if (who) {
       const name = new Text({
         text: who,
-        style: { fill: "#6ab0ff", fontSize: 26, fontWeight: "700", fontFamily: "system-ui, sans-serif" },
+        style: { fill: nameColor, fontSize: 26, fontWeight: "700", fontFamily: "system-ui, sans-serif" },
       });
       name.position.set(PAD + 28, y + 22);
       this.uiLayer.addChild(name);
@@ -249,7 +269,10 @@ export class PixiRenderer {
   }
 
   private addHint(text: string): void {
-    const hint = new Text({ text, style: { fill: "#5b6577", fontSize: 18, fontFamily: "system-ui, sans-serif" } });
+    const hint = new Text({
+      text,
+      style: { fill: "#5b6577", fontSize: 18, fontFamily: "system-ui, sans-serif" },
+    });
     hint.position.set(W - PAD - 28 - hint.width, H - PAD - 36);
     this.uiLayer.addChild(hint);
   }
@@ -274,7 +297,11 @@ export class PixiRenderer {
 
       const label = new Text({
         text: opt.label,
-        style: { fill: opt.enabled ? "#e8ecf4" : "#5b6577", fontSize: 24, fontFamily: "system-ui, sans-serif" },
+        style: {
+          fill: opt.enabled ? "#e8ecf4" : "#5b6577",
+          fontSize: 24,
+          fontFamily: "system-ui, sans-serif",
+        },
       });
       label.position.set(24, (btnH - label.height) / 2);
       container.addChild(label);

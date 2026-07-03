@@ -1,5 +1,5 @@
 import { validateStory } from "@ludelier/schema";
-import { Simulation, StatementBudgetError } from "@ludelier/engine";
+import { hashState, Simulation, StatementBudgetError } from "@ludelier/engine";
 import { PixiRenderer } from "@ludelier/renderer-pixi";
 import storyData from "../../../examples/cafe.story.json";
 import { clearSave, loadSave, saveState } from "./save";
@@ -10,6 +10,9 @@ if (!parsed.success) {
   throw new Error("invalid story: " + JSON.stringify(parsed.issues, null, 2));
 }
 const story = parsed.data;
+// Fingerprint binds saves to this exact story: a PWA update that changes the story
+// invalidates old saves instead of restoring a cursor into nodes that moved/vanished.
+const storyHash = hashState(story);
 
 let sim: Simulation;
 
@@ -73,7 +76,7 @@ const renderer = new PixiRenderer({
 
 function update(): void {
   renderer.render(sim.state);
-  void saveState(story.meta.id, sim.state);
+  void saveState(story.meta.id, storyHash, sim.state);
   // Agent-native test surface: every action a player can take is callable here too.
   (window as unknown as { __ludelier: unknown }).__ludelier = {
     pending: sim.state.pending,
@@ -91,9 +94,18 @@ async function main(): Promise<void> {
   const root = document.getElementById("app");
   if (!root) throw new Error("#app not found");
 
-  await renderer.mount(root);
-  // Preload every declared asset up front so render() stays synchronous.
-  await renderer.preload(story.assets);
+  // Mount + preload are the likeliest real-world failures (a 404'd asset, WebGL init) —
+  // they must surface as the recoverable overlay too, not an unhandled rejection with
+  // neither data-ready nor data-error ever set.
+  try {
+    await renderer.mount(root);
+    renderer.setCharacters(story.characters);
+    // Preload every declared asset up front so render() stays synchronous.
+    await renderer.preload(story.assets);
+  } catch (err) {
+    fatal(err);
+    return;
+  }
 
   // ?new starts fresh; otherwise resume the local save (local-first).
   const fresh = new URLSearchParams(location.search).has("new");
@@ -105,7 +117,7 @@ async function main(): Promise<void> {
   try {
     sim = new Simulation(story, { seed: story.meta.seed });
     if (!fresh) {
-      const saved = await loadSave(story.meta.id);
+      const saved = await loadSave(story.meta.id, storyHash);
       if (saved) sim.state = saved;
     }
     update();
