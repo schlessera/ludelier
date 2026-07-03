@@ -72,14 +72,18 @@ export class EditLog {
     if (command === "add-statement") {
       const sp = params as { statement?: { id?: string } };
       if (sp.statement && sp.statement.id === undefined) {
-        finalParams = { ...(params as Record<string, unknown>), statement: { ...sp.statement, id: nextStatementId(seq) } };
+        finalParams = {
+          ...(params as Record<string, unknown>),
+          statement: { ...sp.statement, id: nextStatementId(seq) },
+        };
       }
     }
     const res = applyEdit(this.world, this.currentStory(), command, finalParams);
     if (!res.success) return res;
-    // Linear-history (KTD-11): a new edit after undo discards the orphaned redo tail.
+    // Linear-history (KTD-11): a new edit after undo discards the orphaned redo tail,
+    // after which records.length === head === seq — the record takes the seq computed above.
     if (this.head < this.records.length) this.records = this.records.slice(0, this.head);
-    this.records.push({ seq: this.records.length, runId: opts.runId, command, params: finalParams });
+    this.records.push({ seq, runId: opts.runId, command, params: finalParams });
     this.head = this.records.length;
     this.current = res.data; // the applied result IS the new tip — keep the memo warm (no refold)
     return res;
@@ -120,7 +124,10 @@ export class EditLog {
     for (let i = firstIdx; i < active.length; i++) {
       if (active[i]!.runId !== runId) {
         return fail([
-          { path: "runId", message: `run "${runId}" is not a contiguous tail (interleaved at seq ${active[i]!.seq})` },
+          {
+            path: "runId",
+            message: `run "${runId}" is not a contiguous tail (interleaved at seq ${active[i]!.seq})`,
+          },
         ]);
       }
     }
@@ -137,23 +144,64 @@ export class EditLog {
 
   /** JSONL of the active records (one per line). */
   export(): string {
-    return this.recordsView().map((r) => JSON.stringify(r)).join("\n");
+    return this.recordsView()
+      .map((r) => JSON.stringify(r))
+      .join("\n");
   }
+}
+
+/** Upper bound on imported records — a backstop against a runaway/hostile JSONL blob. */
+const MAX_IMPORT_RECORDS = 100_000;
+
+/** Parse + shape-check one JSONL line as an EditRecord — never throws. */
+function parseRecordLine(
+  line: string,
+  lineNo: number,
+): Result<{ runId: string; command: string; params: unknown }> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(line);
+  } catch (e) {
+    return fail([{ path: `line ${lineNo}`, message: `not valid JSON: ${(e as Error).message}` }]);
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return fail([{ path: `line ${lineNo}`, message: "record must be a JSON object" }]);
+  }
+  const rec = raw as { runId?: unknown; command?: unknown; params?: unknown };
+  if (typeof rec.command !== "string" || rec.command.length === 0) {
+    return fail([{ path: `line ${lineNo}`, message: 'record is missing a string "command"' }]);
+  }
+  if (typeof rec.runId !== "string" || rec.runId.length === 0) {
+    return fail([{ path: `line ${lineNo}`, message: 'record is missing a string "runId"' }]);
+  }
+  return ok({ runId: rec.runId, command: rec.command, params: rec.params });
 }
 
 /**
  * Rebuild an EditLog from a base story + a JSONL export. The base is checked with the
  * **stricter** validator (validateStory + say.who, KTD-3) so the always-valid invariant
- * covers the base and imported logs, not only incremental edits.
+ * covers the base and imported logs, not only incremental edits. Malformed lines return
+ * a fail envelope (with the line number) instead of throwing; params are re-validated by
+ * `applyEdit` per record. Note `seq` is renumbered on import — an export/import round-trip
+ * is canonical-story-identical, not byte-identical, under tampering.
  */
 export function importLog(world: Registry, base: unknown, jsonl: string): Result<EditLog> {
   const baseRes = validateWorld(base);
   if (!baseRes.success) return baseRes;
   const log = new EditLog(world, baseRes.data);
-  const lines = jsonl.split("\n").map((l) => l.trim()).filter(Boolean);
-  for (const line of lines) {
-    const rec = JSON.parse(line) as EditRecord;
-    const res = log.apply(rec.command, rec.params, { runId: rec.runId });
+  const lines = jsonl
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length > MAX_IMPORT_RECORDS) {
+    return fail([
+      { path: "(log)", message: `too many records: ${lines.length} (max ${MAX_IMPORT_RECORDS})` },
+    ]);
+  }
+  for (const [i, line] of lines.entries()) {
+    const parsed = parseRecordLine(line, i + 1);
+    if (!parsed.success) return parsed;
+    const res = log.apply(parsed.data.command, parsed.data.params, { runId: parsed.data.runId });
     if (!res.success) return res;
   }
   return ok(log);

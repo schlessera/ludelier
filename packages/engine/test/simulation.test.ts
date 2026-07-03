@@ -35,4 +35,22 @@ describe("Simulation", () => {
     b.run(goodPath);
     expect(a.hash()).toBe(b.hash());
   });
+
+  it("the hash covers the transcript — a text-only edit changes it", () => {
+    // Two stories identical except for one say's text: cursor/vars/rng/stage/pending all
+    // converge at the end, so only the transcript distinguishes them. Replay must catch that.
+    const mk = (text: string) => ({
+      meta: { id: "t", title: "T", start: "a" },
+      characters: [{ id: "n", name: "N" }],
+      assets: [],
+      nodes: [{ id: "a", body: [{ op: "say" as const, who: "n", text }, { op: "end" as const }] }],
+    });
+    const a = new Simulation(mk("hello"), { seed: 1 });
+    const b = new Simulation(mk("goodbye"), { seed: 1 });
+    a.run([{ type: "ADVANCE" }]);
+    b.run([{ type: "ADVANCE" }]);
+    expect(a.state.done).toBe(true);
+    expect(b.state.done).toBe(true);
+    expect(a.hash()).not.toBe(b.hash());
+  });
 });

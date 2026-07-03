@@ -3,9 +3,7 @@ import { describe, expect, it } from "vitest";
 import { validateStory, storyJsonSchema } from "../src/index";
 
 function cafe(): unknown {
-  return JSON.parse(
-    readFileSync(new URL("../../../examples/cafe.story.json", import.meta.url), "utf8"),
-  );
+  return JSON.parse(readFileSync(new URL("../../../examples/cafe.story.json", import.meta.url), "utf8"));
 }
 
 describe("validateStory", () => {
@@ -36,17 +34,29 @@ describe("validateStory", () => {
   it("rejects a branch to an unknown node (cross-reference)", () => {
     const res = validateStory({
       meta: { id: "x", title: "x", start: "a" },
-      nodes: [{ id: "a", body: [{ op: "branch", cond: { var: "f", cmp: "eq", value: 1 }, goto: "nowhere" }, { op: "end" }] }],
+      nodes: [
+        {
+          id: "a",
+          body: [{ op: "branch", cond: { var: "f", cmp: "eq", value: 1 }, goto: "nowhere" }, { op: "end" }],
+        },
+      ],
     });
     expect(res.success).toBe(false);
-    if (!res.success) expect(res.issues.some((i) => i.message.includes('branch to unknown node "nowhere"'))).toBe(true);
+    if (!res.success)
+      expect(res.issues.some((i) => i.message.includes('branch to unknown node "nowhere"'))).toBe(true);
   });
 
   it("accepts a branch followed by more statements (it is not terminal)", () => {
     const res = validateStory({
       meta: { id: "x", title: "x", start: "a" },
       nodes: [
-        { id: "a", body: [{ op: "branch", cond: { var: "f", cmp: "eq", value: 1 }, goto: "b" }, { op: "jump", goto: "b" }] },
+        {
+          id: "a",
+          body: [
+            { op: "branch", cond: { var: "f", cmp: "eq", value: 1 }, goto: "b" },
+            { op: "jump", goto: "b" },
+          ],
+        },
         { id: "b", body: [{ op: "end" }] },
       ],
     });
@@ -94,6 +104,36 @@ describe("validateStory", () => {
     expect(res.success).toBe(true);
   });
 
+  it("rejects a statement after a choice (choice is terminal)", () => {
+    const res = validateStory({
+      meta: { id: "x", title: "x", start: "a" },
+      characters: [{ id: "mc", name: "MC" }],
+      nodes: [
+        {
+          id: "a",
+          body: [
+            { op: "choice", options: [{ label: "go", goto: "b" }] },
+            { op: "say", who: "mc", text: "never runs" },
+          ],
+        },
+        { id: "b", body: [{ op: "end" }] },
+      ],
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) expect(res.issues.some((i) => i.message.includes('terminal "choice"'))).toBe(true);
+  });
+
+  it("accepts a choice as a node's last statement", () => {
+    const res = validateStory({
+      meta: { id: "x", title: "x", start: "a" },
+      nodes: [
+        { id: "a", body: [{ op: "choice", options: [{ label: "go", goto: "b" }] }] },
+        { id: "b", body: [{ op: "end" }] },
+      ],
+    });
+    expect(res.success).toBe(true);
+  });
+
   it("rejects duplicate statement ids", () => {
     const res = validateStory({
       meta: { id: "x", title: "x", start: "a" },
@@ -116,7 +156,10 @@ describe("validateStory", () => {
 describe("assets + scene/show/hide", () => {
   const base = {
     meta: { id: "x", title: "x", start: "a", seed: 1 },
-    assets: [{ id: "bg", src: "/bg.png" }, { id: "her", src: "/her.png" }],
+    assets: [
+      { id: "bg", src: "/bg.png" },
+      { id: "her", src: "/her.png" },
+    ],
   };
 
   it("accepts scene/show/hide referencing declared assets", () => {
@@ -170,7 +213,10 @@ describe("assets + scene/show/hide", () => {
   it("rejects duplicate asset ids", () => {
     const res = validateStory({
       meta: { id: "x", title: "x", start: "a", seed: 1 },
-      assets: [{ id: "bg", src: "/a.png" }, { id: "bg", src: "/b.png" }],
+      assets: [
+        { id: "bg", src: "/a.png" },
+        { id: "bg", src: "/b.png" },
+      ],
       nodes: [{ id: "a", body: [{ op: "end" }] }],
     });
     expect(res.success).toBe(false);

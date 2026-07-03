@@ -8,10 +8,19 @@ export interface TraceLine {
   hash: string;
 }
 
-/** The logical (deterministic) slice of state that gets hashed. Excludes nothing
- *  that affects outcomes; transcript is included because it too is deterministic. */
+/** The logical (deterministic) slice of state that gets hashed. Everything is included —
+ *  the transcript too, so a text-only edit (a changed `say`) shows up in replay hashes.
+ *  (`exploreStory` keeps its own transcript-free dedup key; this does not affect it.) */
 function snapshot(s: GameState) {
-  return { cursor: s.cursor, vars: s.vars, rng: s.rng, stage: s.stage, pending: s.pending, done: s.done };
+  return {
+    cursor: s.cursor,
+    vars: s.vars,
+    rng: s.rng,
+    stage: s.stage,
+    pending: s.pending,
+    done: s.done,
+    transcript: s.transcript,
+  };
 }
 
 /**

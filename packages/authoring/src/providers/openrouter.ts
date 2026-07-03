@@ -10,6 +10,9 @@ export interface OpenRouterOptions {
   appUrl?: string;
   appName?: string;
   fetchImpl?: typeof fetch;
+  /** Retries on transient failures (429/5xx/network). Default 3. */
+  maxRetries?: number;
+  retryBaseMs?: number;
 }
 
 /** OpenRouter provider — OpenAI-compatible API; one BYOK key fans out to many models. */
@@ -26,5 +29,7 @@ export function openRouterProvider(opts: OpenRouterOptions): LLMProvider {
     jsonSchema: true,
     headers,
     fetchImpl: opts.fetchImpl,
+    maxRetries: opts.maxRetries,
+    retryBaseMs: opts.retryBaseMs,
   });
 }

@@ -22,6 +22,40 @@ export interface OpenAiCompatibleConfig {
   tools?: boolean;
   headers?: Record<string, string>;
   fetchImpl?: typeof fetch;
+  /** Retries on transient failures (429/5xx/network), on top of the first attempt. Default 3. */
+  maxRetries?: number;
+  /** Base backoff delay in ms (doubles per retry; a `Retry-After` header wins). Default 500.
+   *  Tests set 0 to keep the suite fast. */
+  retryBaseMs?: number;
+}
+
+/** Statuses worth retrying: rate limits and transient server-side failures. */
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
+/** Abort-aware sleep — resolves early (without throwing) if the signal fires. */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (ms <= 0 || signal?.aborted) return resolve();
+    const t = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(t);
+      resolve();
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Delay before the next attempt: `Retry-After` (seconds) when present, else exponential backoff. */
+function retryDelayMs(res: Response | null, attempt: number, baseMs: number): number {
+  const header = res?.headers?.get?.("retry-after");
+  if (header) {
+    const secs = Number(header);
+    if (Number.isFinite(secs) && secs >= 0) return secs * 1000;
+  }
+  return baseMs * 2 ** attempt;
 }
 
 interface ApiToolCall {
@@ -72,6 +106,8 @@ function toApiMessage(m: ChatMessage): Record<string, unknown> {
 export function openAiCompatibleProvider(cfg: OpenAiCompatibleConfig): LLMProvider {
   const capabilities: LLMCapabilities = { jsonSchema: cfg.jsonSchema ?? true, tools: cfg.tools ?? true };
   const doFetch = cfg.fetchImpl ?? fetch;
+  const maxRetries = cfg.maxRetries ?? 3;
+  const retryBaseMs = cfg.retryBaseMs ?? 500;
 
   return {
     id: cfg.id,
@@ -81,8 +117,9 @@ export function openAiCompatibleProvider(cfg: OpenAiCompatibleConfig): LLMProvid
       const body: Record<string, unknown> = {
         model,
         messages: req.messages.map(toApiMessage),
-        temperature: req.temperature ?? 0.7,
       };
+      // Only send temperature when the caller sets one — otherwise let the model default apply.
+      if (req.temperature != null) body.temperature = req.temperature;
       if (req.maxTokens != null) body.max_tokens = req.maxTokens;
       if (req.jsonSchema && capabilities.jsonSchema) {
         body.response_format = {
@@ -97,16 +134,41 @@ export function openAiCompatibleProvider(cfg: OpenAiCompatibleConfig): LLMProvid
         }));
       }
 
-      const res = await doFetch(`${cfg.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${cfg.apiKey}`,
-          ...(cfg.headers ?? {}),
-        },
-        body: JSON.stringify(body),
-        signal: req.signal,
-      });
+      // A transient failure (rate limit, 5xx, dropped connection) must not kill a whole
+      // multi-turn agent run — retry with backoff, honouring Retry-After. Aborts never retry.
+      let res: Response | null = null;
+      let lastError: Error | null = null;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        if (attempt > 0) {
+          await sleep(retryDelayMs(res, attempt - 1, retryBaseMs), req.signal);
+        }
+        if (req.signal?.aborted) {
+          throw lastError ?? new DOMException("The operation was aborted.", "AbortError");
+        }
+        try {
+          res = await doFetch(`${cfg.baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${cfg.apiKey}`,
+              ...(cfg.headers ?? {}),
+            },
+            body: JSON.stringify(body),
+            signal: req.signal,
+          });
+        } catch (err) {
+          if (req.signal?.aborted) throw err; // an abort is the caller's intent, not a failure
+          lastError = err as Error; // network-level failure — retryable
+          res = null;
+          continue;
+        }
+        if (res.ok || !RETRYABLE_STATUS.has(res.status)) break;
+      }
+      if (res === null) {
+        throw new Error(
+          `${cfg.id} completion failed after ${maxRetries + 1} attempts: ${lastError?.message ?? "network error"}`,
+        );
+      }
 
       const json = (await res.json().catch(() => ({}))) as ChatCompletionResponse;
       if (!res.ok) {

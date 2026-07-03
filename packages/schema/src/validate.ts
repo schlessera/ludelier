@@ -5,9 +5,7 @@ export interface Issue {
   message: string;
 }
 
-export type ValidateResult =
-  | { success: true; data: Story }
-  | { success: false; issues: Issue[] };
+export type ValidateResult = { success: true; data: Story } | { success: false; issues: Issue[] };
 
 /** Cross-reference checks that a single-pass Zod schema cannot express. */
 function crossRefIssues(story: Story): Issue[] {
@@ -47,8 +45,9 @@ function crossRefIssues(story: Story): Issue[] {
   const stmtIds = new Set<string>();
 
   for (const node of story.nodes) {
-    // A terminal statement (end / jump) ends the node; nothing may follow it (dead code).
-    const term = node.body.findIndex((s) => s.op === "end" || s.op === "jump");
+    // A terminal statement ends the node; nothing may follow it (dead code). `choice` is
+    // terminal too: every option carries a `goto` and the reducer never resumes past it.
+    const term = node.body.findIndex((s) => s.op === "end" || s.op === "jump" || s.op === "choice");
     if (term !== -1 && term < node.body.length - 1) {
       issues.push({
         path: `nodes.${node.id}.body[${term + 1}]`,

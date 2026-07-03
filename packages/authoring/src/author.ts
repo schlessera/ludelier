@@ -8,7 +8,11 @@ export interface AuthorOptions {
   prompt: string;
   /** Override the provider's default model. */
   model?: string;
+  /** Sampling temperature. Defaults low (0.2) — schema-conformant JSON wants precision. */
   temperature?: number;
+  /** Output-token cap. Defaults to a generous 16384 so a whole Story isn't silently
+   *  truncated into unparseable JSON by a stingy provider default (a wasted attempt). */
+  maxTokens?: number;
   /** Max generate→validate→correct rounds before giving up. */
   maxAttempts?: number;
   /** Override the default system instruction (advanced). */
@@ -93,7 +97,8 @@ export async function generateStory(opts: AuthorOptions): Promise<AuthorResult> 
       // Snapshot: the request reflects the conversation at call time, not later mutations.
       messages: [...transcript],
       model: opts.model,
-      temperature: opts.temperature,
+      temperature: opts.temperature ?? 0.2,
+      maxTokens: opts.maxTokens ?? 16384,
       jsonSchema: { name: "Story", schema },
     });
     transcript.push({ role: "assistant", content: completion.text });

@@ -34,10 +34,13 @@ describe("OpenAI-compatible providers", () => {
       jsonSchema: { name: "Story", schema: { type: "object" } },
     });
     expect(cap.url).toBe("https://api.openai.com/v1/chat/completions");
-    const body = cap.body as Record<string, any>;
+    const body = cap.body as {
+      model?: string;
+      response_format?: { type?: string; json_schema?: { name?: string } };
+    };
     expect(body.model).toBe("gpt-x");
-    expect(body.response_format.type).toBe("json_schema");
-    expect(body.response_format.json_schema.name).toBe("Story");
+    expect(body.response_format?.type).toBe("json_schema");
+    expect(body.response_format?.json_schema?.name).toBe("Story");
     expect(cap.headers?.Authorization).toBe("Bearer k");
     expect(r.text).toContain("hello");
     expect(r.usage?.completionTokens).toBe(7);
@@ -60,9 +63,83 @@ describe("OpenAI-compatible providers", () => {
 
   it("throws a useful error on a non-2xx response", async () => {
     const errFetch = (async () =>
-      new Response(JSON.stringify({ error: { message: "bad model" } }), { status: 400 })) as unknown as typeof fetch;
+      new Response(JSON.stringify({ error: { message: "bad model" } }), {
+        status: 400,
+      })) as unknown as typeof fetch;
     const p = openAiProvider({ apiKey: "k", model: "x", fetchImpl: errFetch });
     await expect(p.complete({ messages: [{ role: "user", content: "hi" }] })).rejects.toThrow(/bad model/);
+  });
+
+  it("omits temperature unless the caller sets one", async () => {
+    const cap: Capture = {};
+    const p = openAiProvider({ apiKey: "k", model: "m", fetchImpl: fakeFetch(cap) });
+    await p.complete({ messages: [{ role: "user", content: "hi" }] });
+    expect((cap.body as Record<string, unknown>).temperature).toBeUndefined();
+    await p.complete({ messages: [{ role: "user", content: "hi" }], temperature: 0.3 });
+    expect((cap.body as Record<string, unknown>).temperature).toBe(0.3);
+  });
+});
+
+describe("transient-failure retry", () => {
+  /** A fetch that fails `failures` times (status or rejection) before succeeding. */
+  function flakyFetch(
+    failures: number,
+    status: number | "network",
+  ): { impl: typeof fetch; calls: () => number } {
+    let n = 0;
+    const impl = (async () => {
+      n++;
+      if (n <= failures) {
+        if (status === "network") throw new TypeError("fetch failed");
+        return new Response(JSON.stringify({ error: { message: "busy" } }), { status });
+      }
+      return new Response(JSON.stringify({ model: "m", choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+      });
+    }) as unknown as typeof fetch;
+    return { impl, calls: () => n };
+  }
+
+  function provider(fetchImpl: typeof fetch, maxRetries?: number) {
+    return openAiCompatibleProvider({
+      id: "test",
+      baseUrl: "http://example.test/v1",
+      apiKey: "k",
+      model: "m",
+      fetchImpl,
+      maxRetries,
+      retryBaseMs: 0, // keep the suite fast
+    });
+  }
+
+  it("retries a 429 and succeeds", async () => {
+    const { impl, calls } = flakyFetch(2, 429);
+    const res = await provider(impl).complete({ messages: [{ role: "user", content: "hi" }] });
+    expect(res.text).toBe("ok");
+    expect(calls()).toBe(3);
+  });
+
+  it("retries a network-level failure and succeeds", async () => {
+    const { impl, calls } = flakyFetch(1, "network");
+    const res = await provider(impl).complete({ messages: [{ role: "user", content: "hi" }] });
+    expect(res.text).toBe("ok");
+    expect(calls()).toBe(2);
+  });
+
+  it("gives up after maxRetries on a persistent 500", async () => {
+    const { impl, calls } = flakyFetch(99, 500);
+    await expect(provider(impl, 1).complete({ messages: [{ role: "user", content: "hi" }] })).rejects.toThrow(
+      /500/,
+    );
+    expect(calls()).toBe(2); // first attempt + 1 retry
+  });
+
+  it("does not retry a non-transient 400", async () => {
+    const { impl, calls } = flakyFetch(99, 400);
+    await expect(provider(impl).complete({ messages: [{ role: "user", content: "hi" }] })).rejects.toThrow(
+      /400/,
+    );
+    expect(calls()).toBe(1);
   });
 });
 
@@ -85,7 +162,13 @@ function toolFetch(response: unknown) {
 }
 
 function toolProvider(fetchImpl: typeof fetch) {
-  return openAiCompatibleProvider({ id: "test", baseUrl: "http://example.test/v1", apiKey: "k", model: "m", fetchImpl });
+  return openAiCompatibleProvider({
+    id: "test",
+    baseUrl: "http://example.test/v1",
+    apiKey: "k",
+    model: "m",
+    fetchImpl,
+  });
 }
 
 const tools = [{ name: "foo", description: "does foo", parameters: { type: "object" } }];
@@ -102,7 +185,14 @@ describe("OpenAI-compatible tool calling (U5)", () => {
   it("parses tool_calls into toolCalls with JSON-parsed arguments", async () => {
     const { impl } = toolFetch({
       model: "m",
-      choices: [{ message: { content: null, tool_calls: [{ id: "c1", function: { name: "foo", arguments: '{"x":1}' } }] } }],
+      choices: [
+        {
+          message: {
+            content: null,
+            tool_calls: [{ id: "c1", function: { name: "foo", arguments: '{"x":1}' } }],
+          },
+        },
+      ],
     });
     const res = await toolProvider(impl).complete({ messages: [{ role: "user", content: "hi" }], tools });
     expect(res.toolCalls?.[0]).toEqual({ id: "c1", name: "foo", arguments: { x: 1 } });
@@ -116,7 +206,11 @@ describe("OpenAI-compatible tool calling (U5)", () => {
         { role: "tool", content: '{"ok":true}', toolCallId: "c1" },
       ],
     });
-    const msgs = calls[0]!.body.messages as { role: string; tool_calls?: { id: string }[]; tool_call_id?: string }[];
+    const msgs = calls[0]!.body.messages as {
+      role: string;
+      tool_calls?: { id: string }[];
+      tool_call_id?: string;
+    }[];
     expect(msgs[0]!.tool_calls![0]!.id).toBe("c1");
     expect(msgs[1]!.role).toBe("tool");
     expect(msgs[1]!.tool_call_id).toBe("c1");
@@ -136,6 +230,6 @@ describe("OpenAI-compatible tool calling (U5)", () => {
       choices: [{ message: { tool_calls: [{ id: "c1", function: { name: "foo", arguments: "{bad" } }] } }],
     });
     const res = await toolProvider(impl).complete({ messages: [{ role: "user", content: "hi" }], tools });
-    expect(res.toolCalls?.[0]!.arguments).toBe("{bad");
+    expect(res.toolCalls?.[0]?.arguments).toBe("{bad");
   });
 });

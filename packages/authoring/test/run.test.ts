@@ -15,7 +15,15 @@ const base: Story = {
 /** Story whose start node self-loops with no end — a pre-existing dead end (baseline). */
 const selfLoop: Story = {
   ...base,
-  nodes: [{ id: "a", body: [{ op: "say", who: "n", text: "hi" }, { op: "jump", goto: "a" }] }],
+  nodes: [
+    {
+      id: "a",
+      body: [
+        { op: "say", who: "n", text: "hi" },
+        { op: "jump", goto: "a" },
+      ],
+    },
+  ],
   meta: { id: "t", title: "T", start: "a" },
 };
 
@@ -27,7 +35,11 @@ function endlessEditor(): LLMProvider {
     capabilities: { jsonSchema: false, tools: true },
     async complete() {
       const id = `n${i++}`;
-      return { text: "", model: "endless", toolCalls: [{ id: `c${i}`, name: "create-node", arguments: { id } }] };
+      return {
+        text: "",
+        model: "endless",
+        toolCalls: [{ id: `c${i}`, name: "create-node", arguments: { id } }],
+      };
     },
   };
 }
@@ -66,7 +78,13 @@ describe("runAgent (hermetic, scripted provider)", () => {
     const story: Story = {
       ...base,
       nodes: [
-        { id: "a", body: [{ op: "say", who: "n", text: "hi" }, { op: "jump", goto: "a" }] },
+        {
+          id: "a",
+          body: [
+            { op: "say", who: "n", text: "hi" },
+            { op: "jump", goto: "a" },
+          ],
+        },
         { id: "z", body: [{ op: "end" }] },
       ],
       meta: { id: "t", title: "T", start: "a" },
@@ -131,7 +149,15 @@ describe("runAgent (hermetic, scripted provider)", () => {
     // node a has a self-jump at index 1 so rewire-goto can wire b in.
     const story: Story = {
       ...base,
-      nodes: [{ id: "a", body: [{ op: "say", who: "n", text: "hi" }, { op: "jump", goto: "a" }] }],
+      nodes: [
+        {
+          id: "a",
+          body: [
+            { op: "say", who: "n", text: "hi" },
+            { op: "jump", goto: "a" },
+          ],
+        },
+      ],
       meta: { id: "t", title: "T", start: "a" },
     };
     const provider = scriptedTools([
@@ -153,7 +179,15 @@ describe("runAgent (hermetic, scripted provider)", () => {
   it("feeds graph problems (unreachable/dead-end) back through `done`, then self-corrects", async () => {
     const story: Story = {
       ...base,
-      nodes: [{ id: "a", body: [{ op: "say", who: "n", text: "hi" }, { op: "jump", goto: "a" }] }],
+      nodes: [
+        {
+          id: "a",
+          body: [
+            { op: "say", who: "n", text: "hi" },
+            { op: "jump", goto: "a" },
+          ],
+        },
+      ],
       meta: { id: "t", title: "T", start: "a" },
     };
     const provider = scriptedTools([
@@ -211,7 +245,13 @@ describe("runAgent (hermetic, scripted provider)", () => {
       [call("rewire-goto", { nodeId: "a", statementId: "a#1", goto: "b" }, "3")],
       [call("done", {}, "4")],
     ]);
-    const res = await runAgent({ provider, prompt: "x", story: selfLoop, runId: "run-1", onEvent: (e) => events.push(e) });
+    const res = await runAgent({
+      provider,
+      prompt: "x",
+      story: selfLoop,
+      runId: "run-1",
+      onEvent: (e) => events.push(e),
+    });
     expect(res.stopReason).toBe("completed");
     expect(events.some((e) => e.kind === "edit" && e.command === "create-node" && e.success)).toBe(true);
     expect(events.some((e) => e.kind === "verify" && e.clean)).toBe(true);
@@ -255,6 +295,41 @@ describe("runAgent (hermetic, scripted provider)", () => {
     expect(res.stopReason).toBe("checkpoint");
     expect(res.completed).toBe(false);
     expect(res.commands.length).toBe(2); // steps 0 and 1 ran before the step-2 checkpoint
+  });
+
+  it("does not apply edits batched after an accepted done (no completed-but-dirty result)", async () => {
+    // base is already clean, so the batched `done` is accepted immediately; the trailing
+    // create-node (which would leave a new unreachable dead end) must NOT be applied.
+    const provider = scriptedTools([[call("done", {}, "1"), call("create-node", { id: "dangling" }, "2")]]);
+    const res = await runAgent({ provider, prompt: "x", story: base, runId: "run-1", maxSteps: 5 });
+    expect(res.completed).toBe(true);
+    expect(res.ok).toBe(true);
+    expect(res.commands.length).toBe(0);
+    expect(res.story.nodes.some((n) => n.id === "dangling")).toBe(false);
+    // the skipped call still got a tool-result message so the transcript stays coherent
+    const toolMsgs = res.transcript.filter((m) => m.role === "tool");
+    expect(toolMsgs.some((m) => m.content.includes("not applied"))).toBe(true);
+  });
+
+  it("an interrupt during a pending checkpoint aborts the run instead of hanging it", async () => {
+    const ac = new AbortController();
+    const res = await runAgent({
+      provider: endlessEditor(),
+      prompt: "go",
+      story: base,
+      runId: "run-1",
+      checkpointEvery: 2,
+      maxSteps: 50, // backstop so a broken abort can't hang the test
+      signal: ac.signal,
+      // Park the run on a checkpoint promise that never resolves, then interrupt.
+      onCheckpoint: () => {
+        setTimeout(() => ac.abort(), 10);
+        return new Promise<boolean>(() => {});
+      },
+    });
+    expect(res.aborted).toBe(true);
+    expect(res.stopReason).toBe("aborted");
+    expect(res.completed).toBe(false);
   });
 
   it("continues past a checkpoint the caller approves", async () => {

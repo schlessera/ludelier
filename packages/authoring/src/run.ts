@@ -52,7 +52,11 @@ export interface RunAgentOptions {
   /** Caller-supplied run id; defaults to a generated one. Uniqueness is the caller's responsibility. */
   runId?: string;
   model?: string;
+  /** Sampling temperature. Defaults low (0.2) — editing wants precision, not variety. */
   temperature?: number;
+  /** Output-token cap per turn. Defaults to a generous 8192 so a long say-writing batch
+   *  isn't silently truncated into an unparseable tool call by a stingy provider default. */
+  maxTokens?: number;
   system?: string;
 }
 
@@ -171,7 +175,10 @@ const DONE_TOOL: ToolDefinition = {
 };
 
 function agentSystemPrompt(world: Registry): string {
-  const names = world.describe().map((t) => `${t.name} (${t.kind})`).join(", ");
+  const names = world
+    .describe()
+    .map((t) => `${t.name} (${t.kind})`)
+    .join(", ");
   return [
     "You are an editing agent for the Ludelier visual-novel engine.",
     "Use the provided tools to inspect and edit the story. Every edit is validated;",
@@ -183,8 +190,9 @@ function agentSystemPrompt(world: Registry): string {
     "   get-node (never by position): add-statement {nodeId, statement:{op,...}, before?} appends a new",
     "   statement (or inserts it before the `before` statement id); update-statement replaces one in",
     "   place; move-statement reorders one; remove-statement deletes one. `statement` is a story",
-    "   statement object — an `op` plus that op's fields. A terminal (`end`/`jump`) must be a node's",
-    "   LAST statement, so add it last (or insert earlier statements `before` it).",
+    "   statement object — an `op` plus that op's fields. A terminal (`end`/`jump`/`choice`) must be a",
+    "   node's LAST statement — nothing runs after it — so add it last (or insert earlier statements",
+    "   `before` it).",
     "2. Build depth-first and complete one node at a time: create a node, immediately give it its",
     "   statements (say/choice/end), and wire it in (rewire-goto, or a choice/jump that targets it) —",
     "   THEN move to the next node. Do NOT create empty placeholder nodes you will fill later: an empty",
@@ -205,6 +213,26 @@ function agentSystemPrompt(world: Registry): string {
     "and call `done` again.",
     `Available world tasks: ${names}.`,
   ].join("\n");
+}
+
+/** Await a checkpoint answer, resolving `false` immediately if the signal aborts first. */
+function raceAbort(answer: boolean | Promise<boolean>, signal?: AbortSignal): Promise<boolean> {
+  if (!signal) return Promise.resolve(answer);
+  if (signal.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const onAbort = (): void => resolve(false);
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(answer).then(
+      (v) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(v);
+      },
+      () => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(false);
+      },
+    );
+  });
 }
 
 function defaultRunId(): string {
@@ -283,9 +311,15 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
       aborted = true;
       break;
     }
-    // Safety net: every `checkpointEvery` turns, ask whether to keep going.
+    // Safety net: every `checkpointEvery` turns, ask whether to keep going. The wait races
+    // the abort signal — an Interrupt while parked on a checkpoint prompt must end the run,
+    // not leave it hanging on a promise nobody will resolve.
     if (step > 0 && step % checkpointEvery === 0) {
-      const cont = opts.onCheckpoint ? await opts.onCheckpoint(step) : false;
+      const cont = opts.onCheckpoint ? await raceAbort(opts.onCheckpoint(step), opts.signal) : false;
+      if (opts.signal?.aborted) {
+        aborted = true;
+        break;
+      }
       if (!cont) {
         declined = true;
         break;
@@ -298,7 +332,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
       completion = await opts.provider.complete({
         messages: [...transcript],
         model: opts.model,
-        temperature: opts.temperature,
+        temperature: opts.temperature ?? 0.2,
+        maxTokens: opts.maxTokens ?? 8192,
         tools,
         signal: opts.signal,
       });
@@ -334,18 +369,37 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
       continue;
     }
 
-    for (const c of calls) {
+    for (let i = 0; i < calls.length; i++) {
+      const c = calls[i]!;
       if (c.name === DONE_TOOL.name) {
         // `done` is a self-verification gate: accept only a clean run; otherwise return the
         // introduced unreachable / dead-end / validity issues so the model self-corrects.
         const gate = gateNow();
         emit({ kind: "verify", clean: gate.clean, problems: gate.problems });
-        if (gate.clean) completed = true;
         transcript.push({
           role: "tool",
           content: JSON.stringify(gate.clean ? { ok: true } : { ok: false, issues: gate.problems }),
           toolCallId: c.id,
         });
+        if (gate.clean) {
+          // An accepted `done` ends the run at the verified-clean state. Any calls the model
+          // batched AFTER it are not applied — otherwise a trailing edit could dirty the story
+          // after the gate passed, yielding `completed: true` with `ok: false`.
+          completed = true;
+          for (let j = i + 1; j < calls.length; j++) {
+            transcript.push({
+              role: "tool",
+              content: JSON.stringify({
+                success: false,
+                issues: [
+                  { path: "(run)", message: "not applied — `done` was already accepted in this turn" },
+                ],
+              }),
+              toolCallId: calls[j]!.id,
+            });
+          }
+          break;
+        }
         continue;
       }
       const result = dispatch(world, log, runId, c);

@@ -100,7 +100,11 @@ describe("rejected command", () => {
     applyRun(log, "r1");
     const before = hashStory(log.currentStory());
     const beforeLen = log.recordsView().length;
-    const res = log.apply("add-statement", { nodeId: "b", statement: { op: "say", who: "ghost", text: "x" } }, { runId: "r2" });
+    const res = log.apply(
+      "add-statement",
+      { nodeId: "b", statement: { op: "say", who: "ghost", text: "x" } },
+      { runId: "r2" },
+    );
     expect(res.success).toBe(false);
     expect(log.recordsView().length).toBe(beforeLen);
     expect(hashStory(log.currentStory())).toBe(before);
@@ -111,8 +115,16 @@ describe("stable statement ids", () => {
   it("targets the right statement by id (remove keeps the others)", () => {
     const log = new EditLog(world, base);
     log.apply("create-node", { id: "x" }, { runId: "r1" });
-    log.apply("add-statement", { nodeId: "x", statement: { op: "say", who: "n", text: "first" } }, { runId: "r1" });
-    log.apply("add-statement", { nodeId: "x", statement: { op: "say", who: "n", text: "second" } }, { runId: "r1" });
+    log.apply(
+      "add-statement",
+      { nodeId: "x", statement: { op: "say", who: "n", text: "first" } },
+      { runId: "r1" },
+    );
+    log.apply(
+      "add-statement",
+      { nodeId: "x", statement: { op: "say", who: "n", text: "second" } },
+      { runId: "r1" },
+    );
 
     const before = log.currentStory().nodes.find((n) => n.id === "x")!;
     const firstSay = before.body.find((s) => s.op === "say" && s.text === "first")!;
@@ -136,7 +148,11 @@ describe("stable statement ids", () => {
   it("assigned ids survive a refold (export/import) unchanged", () => {
     const log = new EditLog(world, base);
     log.apply("create-node", { id: "x" }, { runId: "r1" });
-    log.apply("add-statement", { nodeId: "x", statement: { op: "say", who: "n", text: "hi" } }, { runId: "r1" });
+    log.apply(
+      "add-statement",
+      { nodeId: "x", statement: { op: "say", who: "n", text: "hi" } },
+      { runId: "r1" },
+    );
     const id = log.currentStory().nodes.find((n) => n.id === "x")!.body[0]!.id;
     const imported = importLog(world, base, log.export());
     expect(imported.success).toBe(true);
@@ -161,5 +177,36 @@ describe("replay determinism", () => {
       expect(hashStory(round)).toBe(hashStory(original));
       expect(validateStory(round).success).toBe(validateStory(original).success);
     }
+  });
+});
+
+describe("importLog hardening", () => {
+  it("returns a fail envelope (with the line number) on a malformed JSONL line — never throws", () => {
+    const log = new EditLog(world, base);
+    applyRun(log, "r1");
+    const lines = log.export().split("\n");
+    lines.splice(1, 0, "{not json");
+    const res = importLog(world, base, lines.join("\n"));
+    expect(res.success).toBe(false);
+    if (!res.success) {
+      expect(res.issues[0]!.path).toBe("line 2");
+      expect(res.issues[0]!.message).toContain("not valid JSON");
+    }
+  });
+
+  it("rejects a record without a string command / runId", () => {
+    const noCommand = importLog(world, base, JSON.stringify({ runId: "r1", params: {} }));
+    expect(noCommand.success).toBe(false);
+    if (!noCommand.success) expect(noCommand.issues[0]!.message).toContain('"command"');
+
+    const noRunId = importLog(world, base, JSON.stringify({ command: "create-node", params: { id: "x" } }));
+    expect(noRunId.success).toBe(false);
+    if (!noRunId.success) expect(noRunId.issues[0]!.message).toContain('"runId"');
+  });
+
+  it("rejects a non-object record line", () => {
+    const res = importLog(world, base, '"just a string"');
+    expect(res.success).toBe(false);
+    if (!res.success) expect(res.issues[0]!.message).toContain("JSON object");
   });
 });

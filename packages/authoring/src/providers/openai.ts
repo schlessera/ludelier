@@ -7,6 +7,9 @@ export interface OpenAiOptions {
   model: string;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
+  /** Retries on transient failures (429/5xx/network). Default 3. */
+  maxRetries?: number;
+  retryBaseMs?: number;
 }
 
 /** OpenAI provider (direct). Supports structured outputs + transparent-capable image gen elsewhere. */
@@ -18,5 +21,7 @@ export function openAiProvider(opts: OpenAiOptions): LLMProvider {
     model: opts.model,
     jsonSchema: true,
     fetchImpl: opts.fetchImpl,
+    maxRetries: opts.maxRetries,
+    retryBaseMs: opts.retryBaseMs,
   });
 }
