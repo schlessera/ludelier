@@ -3,15 +3,25 @@ import { Simulation } from "@ludelier/engine";
 import { PixiRenderer, type AssetRef } from "@ludelier/renderer-pixi";
 import type { EditorSession } from "@ludelier/editor-core";
 
-// Pixi's Assets registry is a global singleton; track which ids are already loaded so a
-// rebuild (after an edit) only loads newly-added assets and never re-adds a live alias.
-const loadedAssetIds = new Set<string>();
+// Pixi's Assets registry is a global singleton; track which id → src pairs are already
+// loaded so a rebuild (after an edit) only loads newly-added assets and never re-adds a
+// live alias. Tracking the src too matters since sessions can be swapped (Open/New): an
+// opened story reusing an id for a *different* src must fail loudly (below) rather than
+// silently rendering the previous story's texture.
+const loadedAssets = new Map<string, string>();
 
 async function ensureAssets(renderer: PixiRenderer, assets: readonly AssetRef[]): Promise<void> {
-  const fresh = assets.filter((a) => !loadedAssetIds.has(a.id));
+  const fresh: AssetRef[] = [];
+  for (const a of assets) {
+    const src = loadedAssets.get(a.id);
+    if (src === undefined) fresh.push(a);
+    else if (src !== a.src) {
+      throw new Error(`asset "${a.id}" is already loaded from "${src}" — reload the page to load "${a.src}"`);
+    }
+  }
   if (fresh.length === 0) return;
   await renderer.preload(fresh);
-  for (const a of fresh) loadedAssetIds.add(a.id);
+  for (const a of fresh) loadedAssets.set(a.id, a.src);
 }
 
 /**
@@ -59,10 +69,10 @@ export function PlayCanvas({
     try {
       const story = session.story;
       await ensureAssets(renderer, story.assets);
+      renderer.setCharacters(story.characters); // dialog resolves id → name/color per edit
       // Guard a stale selection (a node the agent has since deleted) — fall back to the
       // story's own start rather than letting the engine throw "node not found".
-      const start =
-        startNode && story.nodes.some((n) => n.id === startNode) ? startNode : undefined;
+      const start = startNode && story.nodes.some((n) => n.id === startNode) ? startNode : undefined;
       simRef.current = new Simulation(story, { seed: story.meta.seed, start });
       draw();
       setError(null);
@@ -74,6 +84,7 @@ export function PlayCanvas({
   // Mount the renderer once; tear it down on unmount. `destroy()` requires a completed
   // `mount()`, so under StrictMode's mount→unmount→mount probe we must not destroy a
   // renderer whose async init is still in flight — defer that to the init path instead.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-once by design — rebuild/step read refs, and re-running this effect would tear down the live Pixi app
   useEffect(() => {
     let disposed = false;
     const renderer = new PixiRenderer({
@@ -99,30 +110,35 @@ export function PlayCanvas({
         if (rendererRef.current === renderer) rendererRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Replay whenever the story changes or a different start node is selected.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version/startNode are the replay signals (session.story is read fresh inside rebuild); adding rebuild would replay every render
   useEffect(() => {
     if (mountedRef.current) void rebuild();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, startNode]);
 
   return (
     <section className="panel play">
       <h2>
         Play preview{" "}
-        <span className="muted">
-          · {startNode ? `from ${startNode} · fresh state` : "from start"}
-        </span>
+        <span className="muted">· {startNode ? `from ${startNode} · fresh state` : "from start"}</span>
       </h2>
-      {error ? (
-        <p className="err">preview error: {error}</p>
-      ) : (
+      {/* The host div must stay mounted through error states — the Pixi canvas was appended
+          to THIS node at mount time, and swapping it out would leave the renderer drawing
+          into a detached element after recovery. The error renders as an overlay instead. */}
+      <div className="stage-wrap">
         <div className="stage-host" ref={hostRef} />
-      )}
+        {error && (
+          <p className="err stage-error" role="alert">
+            preview error: {error}
+          </p>
+        )}
+      </div>
       <div className="play-actions">
-        <button onClick={() => void rebuild()}>⟳ Restart</button>
+        <button type="button" onClick={() => void rebuild()}>
+          ⟳ Restart
+        </button>
       </div>
     </section>
   );

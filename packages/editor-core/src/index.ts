@@ -104,6 +104,15 @@ export class EditorSession {
     return this.log.currentStory();
   }
 
+  /**
+   * The session's base story (statement ids normalized). Exposed so a UI can persist the
+   * `exportLog()` JSONL alongside the story it replays on — `fromLog(baseStory, jsonl)`
+   * needs exactly this story, not the folded tip.
+   */
+  get baseStory(): Story {
+    return this.log.baseStory;
+  }
+
   /** The task manifest — the same list that drives the CLI and the agent toolset (parity). */
   describe() {
     return this.world.describe();
@@ -116,7 +125,8 @@ export class EditorSession {
   query(task: string, params: unknown = {}): Result<unknown> {
     const t = this.world.get(task);
     if (!t) return fail([{ path: "task", message: `unknown task "${task}"` }]);
-    if (t.kind !== "understand") return fail([{ path: "task", message: `"${task}" is not an understand task — use edit()` }]);
+    if (t.kind !== "understand")
+      return fail([{ path: "task", message: `"${task}" is not an understand task — use edit()` }]);
     if (!t.run) return fail([{ path: "task", message: `task "${task}" has no run handler` }]);
     const parsed = parseParams(t.params, params);
     if (!parsed.success) return parsed;
@@ -159,10 +169,17 @@ export class EditorSession {
    * cleanly). Returns the `{success}` envelope; the log and story are unchanged on failure.
    */
   edit(command: string, params: unknown = {}): Result<Story> {
-    if (this.running) return fail([{ path: "session", message: "busy with an agent run — edit refused until it finishes or is interrupted" }]);
+    if (this.running)
+      return fail([
+        {
+          path: "session",
+          message: "busy with an agent run — edit refused until it finishes or is interrupted",
+        },
+      ]);
     const t = this.world.get(command);
     if (!t) return fail([{ path: "command", message: `unknown task "${command}"` }]);
-    if (t.kind !== "manipulate") return fail([{ path: "command", message: `"${command}" is not a manipulate task — use query()` }]);
+    if (t.kind !== "manipulate")
+      return fail([{ path: "command", message: `"${command}" is not a manipulate task — use query()` }]);
     const res = this.log.apply(command, params, { runId: `manual-${this.manualRuns++}` });
     if (res.success) this.emit();
     return res;
@@ -184,7 +201,13 @@ export class EditorSession {
 
   /** Drop a run's records (e.g. revert a chat turn). Only a contiguous tail run can be reverted. */
   revertRun(runId: string): Result<Story> {
-    if (this.running) return fail([{ path: "session", message: "busy with an agent run — revert refused until it finishes or is interrupted" }]);
+    if (this.running)
+      return fail([
+        {
+          path: "session",
+          message: "busy with an agent run — revert refused until it finishes or is interrupted",
+        },
+      ]);
     const res = this.log.revertRun(runId);
     if (res.success) this.emit();
     return res;
@@ -193,7 +216,9 @@ export class EditorSession {
   /** Throw if a chat run is in flight — for the mutators that don't return a `Result`. */
   private assertIdle(op: string): void {
     if (this.running) {
-      throw new Error(`EditorSession is busy with an agent run — ${op} is not allowed until it finishes or is interrupted`);
+      throw new Error(
+        `EditorSession is busy with an agent run — ${op} is not allowed until it finishes or is interrupted`,
+      );
     }
   }
 

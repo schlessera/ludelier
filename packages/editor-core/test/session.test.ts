@@ -98,6 +98,18 @@ describe("EditorSession", () => {
     }
   });
 
+  it("exposes the base story so a UI can pair exportLog() with what it replays on", () => {
+    const s = new EditorSession(base);
+    s.edit("create-node", { id: "b" });
+    // The base is the pre-edit story (ids normalized), not the folded tip …
+    expect(s.baseStory.nodes.some((nn) => nn.id === "b")).toBe(false);
+    expect(s.baseStory.nodes[0]?.body[0]?.id).toBeDefined();
+    // … and fromLog over exactly this base reproduces the current story.
+    const restored = EditorSession.fromLog(s.baseStory, s.exportLog());
+    expect(restored.success).toBe(true);
+    if (restored.success) expect(restored.data.story).toEqual(s.story);
+  });
+
   it("snapshot reports validity, undo state, and graph health", () => {
     const s = new EditorSession(base);
     const snap = s.snapshot();
@@ -110,7 +122,15 @@ describe("EditorSession", () => {
     // 'a' is a pre-existing dead end (self-loop, no end) → baseline, won't block the gate.
     const s = new EditorSession({
       ...base,
-      nodes: [{ id: "a", body: [{ op: "say", who: "n", text: "hi" }, { op: "jump", goto: "a" }] }],
+      nodes: [
+        {
+          id: "a",
+          body: [
+            { op: "say", who: "n", text: "hi" },
+            { op: "jump", goto: "a" },
+          ],
+        },
+      ],
     });
     const provider = scriptedTools([
       [call("create-node", { id: "b" }, "1")],
