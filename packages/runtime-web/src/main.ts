@@ -1,5 +1,5 @@
 import { validateStory } from "@ludelier/schema";
-import { hashState, Simulation, StatementBudgetError } from "@ludelier/engine";
+import { hashState, type Pending, Simulation, StatementBudgetError } from "@ludelier/engine";
 import { PixiRenderer } from "@ludelier/renderer-pixi";
 import storyData from "../../../examples/cafe.story.json";
 import { clearSave, loadSave, saveState } from "./save";
@@ -13,8 +13,11 @@ const story = parsed.data;
 // Fingerprint binds saves to this exact story: a PWA update that changes the story
 // invalidates old saves instead of restoring a cursor into nodes that moved/vanished.
 const storyHash = hashState(story);
+// id → display name for screen-reader announcements (`pending.who` is the character *id*).
+const characterNames = new Map(story.characters.map((c) => [c.id, c.name]));
 
 let sim: Simulation;
+let liveRegion: HTMLElement | null = null;
 
 /**
  * Show a recoverable error overlay instead of hard-crashing the page. The reducer throws a
@@ -64,6 +67,51 @@ function doChoose(index: number): void {
   safeStep(() => sim.dispatch({ type: "CHOOSE", index }));
 }
 
+/**
+ * Keyboard input: Enter/Space advance, digits 1–9 pick a choice option. The handler only
+ * dispatches — the reducer's own guards decide (ADVANCE acts only on a pending `say`;
+ * CHOOSE only on an enabled option of a pending choice), so it can never bypass game rules.
+ * Registered after the simulation exists (see `main`).
+ */
+function onKeydown(e: KeyboardEvent): void {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return; // don't hijack shortcuts / held keys
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault(); // Space must not scroll the page
+    doAdvance();
+  } else if (e.key >= "1" && e.key <= "9") {
+    doChoose(Number(e.key) - 1);
+  }
+}
+
+/**
+ * Visually-hidden polite live region mirroring the current step, so screen-reader users
+ * can follow the canvas-only presentation. The accessibility floor, not the ceiling.
+ */
+function createLiveRegion(parent: HTMLElement): HTMLElement {
+  const el = document.createElement("div");
+  el.setAttribute("aria-live", "polite");
+  el.style.cssText =
+    "position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0";
+  parent.append(el);
+  return el;
+}
+
+/** The current pending step as one announceable line. */
+function announcement(p: Pending): string {
+  switch (p.kind) {
+    case "say":
+      return `${characterNames.get(p.who) ?? p.who}: ${p.text}`;
+    case "choice": {
+      const options = p.options
+        .map((o, i) => `${i + 1}. ${o.label}${o.enabled ? "" : " (unavailable)"}`)
+        .join(" ");
+      return `${p.prompt ?? "Choose:"} ${options}`;
+    }
+    case "end":
+      return "The end.";
+  }
+}
+
 const renderer = new PixiRenderer({
   onAdvance: doAdvance,
   onChoose: doChoose,
@@ -76,6 +124,11 @@ const renderer = new PixiRenderer({
 
 function update(): void {
   renderer.render(sim.state);
+  if (liveRegion) {
+    const line = announcement(sim.state.pending);
+    // Only touch the DOM when the line changes — rewriting identical text re-announces it.
+    if (liveRegion.textContent !== line) liveRegion.textContent = line;
+  }
   void saveState(story.meta.id, storyHash, sim.state);
   // Agent-native test surface: every action a player can take is callable here too.
   (window as unknown as { __ludelier: unknown }).__ludelier = {
@@ -113,6 +166,8 @@ async function main(): Promise<void> {
     await clearSave(story.meta.id);
   }
 
+  liveRegion = createLiveRegion(root);
+
   // Building the initial state runs the opening statements — a looping story throws here too.
   try {
     sim = new Simulation(story, { seed: story.meta.seed });
@@ -125,6 +180,8 @@ async function main(): Promise<void> {
     fatal(err);
     return;
   }
+  // Only listen once a simulation exists — a keypress during init must not dispatch into nothing.
+  document.addEventListener("keydown", onKeydown);
   // Signal first paint is done — Playwright waits on this before asserting/screenshotting.
   requestAnimationFrame(() => {
     document.documentElement.dataset.ready = "1";

@@ -16,8 +16,11 @@
         font-family: system-ui, sans-serif;
       }
       #app canvas {
-        max-width: 100vw;
-        max-height: 100vh;
+        /* Cap at the logical stage size: on high-DPI screens the canvas' intrinsic
+           (backing-store) size is devicePixelRatio× larger, but it must still display
+           at 1280×720 CSS px, shrinking aspect-preserved on smaller viewports. */
+        max-width: min(100vw, 1280px);
+        max-height: min(100vh, 720px);
         height: auto;
       }
     </style>

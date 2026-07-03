@@ -54,6 +54,28 @@ test("renders the opening frame", async ({ page }) => {
   await expect(page).toHaveScreenshot("opening.png", { maxDiffPixelRatio: 0.03 });
 });
 
+test("advances and chooses via the keyboard", async ({ page }) => {
+  await page.goto("/?new");
+  await ready(page);
+
+  // Enter dismisses the opening `say` (same reducer guard path as a click-advance).
+  expect((await handle(page)).pending.kind).toBe("say");
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await handle(page)).pending.kind).toBe("choice");
+
+  // Digit 1 picks the first choice option -> "Mind if I join you?" (mc speaking).
+  await page.keyboard.press("1");
+  await expect.poll(async () => (await handle(page)).pending).toMatchObject({ kind: "say", who: "mc" });
+
+  // Space also advances -> trust+1, roll, second choice.
+  await page.keyboard.press(" ");
+  await expect.poll(async () => (await handle(page)).pending.kind).toBe("choice");
+  expect((await handle(page)).vars.trust).toBe(1);
+
+  // The hidden live region mirrors the pending step for screen readers.
+  await expect(page.locator('[aria-live="polite"]')).toContainText("Stay and talk");
+});
+
 test("advances and chooses via real canvas clicks", async ({ page }) => {
   await page.goto("/?new");
   await ready(page);

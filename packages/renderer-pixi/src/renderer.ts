@@ -1,5 +1,16 @@
 import { Application, Assets, Container, Graphics, Sprite, Text, type Ticker } from "pixi.js";
 import type { GameState, Pending, StageSprite } from "@ludelier/engine";
+import {
+  type CharacterRef,
+  characterScale,
+  coverScale,
+  DEFAULT_NAME_COLOR,
+  resolveSpeaker,
+  slotX,
+  STAGE_H as H,
+  STAGE_W as W,
+  tweenAlpha,
+} from "./layout";
 
 export interface RendererHandlers {
   onAdvance: () => void;
@@ -19,6 +30,13 @@ export interface LayerZIndices {
 export interface RendererOptions {
   /** Override the stacking order of the stage's top-level layers. */
   layers?: LayerZIndices;
+  /** Backing-store resolution (device pixels per logical pixel). Defaults to the device's
+   *  `devicePixelRatio` so high-DPI screens get a crisp render instead of a CSS-upscaled
+   *  1× buffer. The logical 1280×720 coordinate space and the CSS-displayed size are
+   *  unaffected (displayed size stays under the host page's CSS control, and Pixi maps
+   *  pointer events through canvas-rect × resolution). Pin to `1` where byte-stable
+   *  frames matter (e.g. screenshot baselines). */
+  resolution?: number;
 }
 
 /** A media asset to preload. Structurally matches @ludelier/schema's `Asset`. */
@@ -27,25 +45,7 @@ export interface AssetRef {
   src: string;
 }
 
-/** A speaking character. Structurally matches @ludelier/schema's `Character`. */
-export interface CharacterRef {
-  id: string;
-  name: string;
-  color?: string;
-}
-
-const DEFAULT_NAME_COLOR = "#6ab0ff";
-
-const W = 1280;
-const H = 720;
 const PAD = 48;
-const FADE_MS = 300;
-const CHAR_H = 620;
-const SLOTS: Record<StageSprite["at"], number> = {
-  left: W * 0.25,
-  center: W * 0.5,
-  right: W * 0.75,
-};
 
 /** Sane default stacking order; spaced to leave room for future layers between. */
 const DEFAULT_LAYERS: Required<LayerZIndices> = { bg: 0, characters: 10, ui: 20 };
@@ -74,6 +74,7 @@ export class PixiRenderer {
   readonly app: Application;
   private readonly handlers: RendererHandlers;
   private readonly layers: Required<LayerZIndices>;
+  private readonly resolution?: number;
   private bgLayer!: Container;
   private charLayer!: Container;
   private uiLayer!: Container;
@@ -96,10 +97,19 @@ export class PixiRenderer {
       characters: options.layers?.characters ?? DEFAULT_LAYERS.characters,
       ui: options.layers?.ui ?? DEFAULT_LAYERS.ui,
     };
+    this.resolution = options.resolution;
   }
 
   async mount(parent: HTMLElement): Promise<void> {
-    await this.app.init({ width: W, height: H, background: "#0e1117", antialias: true });
+    await this.app.init({
+      width: W,
+      height: H,
+      background: "#0e1117",
+      antialias: true,
+      // Read the device pixel ratio at mount time (not construction) so SSR-ish or
+      // headless setups resolve it against the real window. See RendererOptions.
+      resolution: this.resolution ?? (window.devicePixelRatio || 1),
+    });
     this.app.canvas.setAttribute("data-testid", "stage");
     parent.appendChild(this.app.canvas);
 
@@ -170,7 +180,7 @@ export class PixiRenderer {
     sprite.anchor.set(0.5);
     sprite.position.set(W / 2, H / 2);
     // Cover-fit: fill the stage, cropping overflow, preserving aspect ratio.
-    sprite.scale.set(Math.max(W / sprite.texture.width, H / sprite.texture.height));
+    sprite.scale.set(coverScale(sprite.texture.width, sprite.texture.height));
     return sprite;
   }
 
@@ -204,8 +214,8 @@ export class PixiRenderer {
   private makeCharacter(asset: string, at: StageSprite["at"]): Sprite {
     const sprite = new Sprite(this.texture(asset));
     sprite.anchor.set(0.5, 1); // bottom-center: sprites "stand" on the stage floor
-    sprite.position.set(SLOTS[at], H);
-    sprite.scale.set(CHAR_H / sprite.texture.height);
+    sprite.position.set(slotX(at), H);
+    sprite.scale.set(characterScale(sprite.texture.height));
     return sprite;
   }
 
@@ -216,9 +226,9 @@ export class PixiRenderer {
 
     if (p.kind === "say") {
       // `p.who` is the character id; render the declared display name in its color.
-      const speaker = this.characters.get(p.who);
+      const speaker = resolveSpeaker(p.who, this.characters);
       this.addAdvanceLayer();
-      this.addDialog(speaker?.name ?? p.who, p.text, speaker?.color ?? DEFAULT_NAME_COLOR);
+      this.addDialog(speaker.name, p.text, speaker.color);
       this.addHint("click to continue ▸");
     } else if (p.kind === "choice") {
       if (p.prompt) this.addDialog("", p.prompt);
@@ -337,14 +347,10 @@ export class PixiRenderer {
     const remaining: Tween[] = [];
     for (const tw of this.tweens) {
       tw.elapsed += ticker.deltaMS;
-      const t = Math.min(1, tw.elapsed / FADE_MS);
-      tw.target.alpha = tw.from + (tw.to - tw.from) * t;
-      if (t >= 1) {
-        tw.target.alpha = tw.to; // snap to final — no float drift in screenshots
-        tw.onDone?.();
-      } else {
-        remaining.push(tw);
-      }
+      const { alpha, done } = tweenAlpha(tw.from, tw.to, tw.elapsed);
+      tw.target.alpha = alpha; // tweenAlpha snaps to final — no float drift in screenshots
+      if (done) tw.onDone?.();
+      else remaining.push(tw);
     }
     this.tweens = remaining;
     if (this.tweens.length === 0) this.setAnimating(false);
