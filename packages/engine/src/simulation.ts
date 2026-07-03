@@ -22,9 +22,9 @@ export class Simulation {
   readonly story: Story;
   state: GameState;
 
-  constructor(story: Story, opts: { seed?: number } = {}) {
+  constructor(story: Story, opts: { seed?: number; start?: string } = {}) {
     this.story = story;
-    this.state = initialState(story, opts.seed);
+    this.state = initialState(story, opts.seed, opts.start);
   }
 
   dispatch(action: Action): GameState {

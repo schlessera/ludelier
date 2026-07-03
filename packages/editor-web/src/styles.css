@@ -318,3 +318,93 @@ button.danger:hover:not(:disabled) {
 .health dd {
   margin: 0;
 }
+
+/* Story map (read-only flow diagram) */
+.map {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.storymap {
+  flex: 1;
+  min-height: 340px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0d1117;
+  overflow: hidden;
+}
+
+.map-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.map-node .map-node-id {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+}
+
+.map-node.is-start {
+  border-color: var(--accent);
+}
+
+.map-node.is-unreachable,
+.map-node.is-deadend {
+  border-color: var(--bad);
+}
+
+.map-node.is-selected {
+  outline: 2px solid var(--accent);
+}
+
+.react-flow__edge.edge-conditional .react-flow__edge-path {
+  stroke: var(--accent);
+}
+
+.react-flow__edge-text {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+/* Script lens */
+.lens.empty {
+  padding: 8px 0;
+}
+
+.lens .script {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.lens .stmt {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  border-bottom: 1px solid #1a2029;
+}
+
+.lens .stmt:last-child {
+  border-bottom: none;
+}
+
+.lens .line {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+  font-size: 12.5px;
+  flex: 1;
+}
+
+.lens .stmt-id {
+  font-size: 10px;
+}

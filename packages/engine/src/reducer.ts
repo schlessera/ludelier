@@ -155,11 +155,17 @@ function resolve(story: Story, state: GameState): GameState {
   }
 }
 
-/** Build the starting state and resolve to the first blocking statement. */
-export function initialState(story: Story, seed?: number): GameState {
+/**
+ * Build the starting state and resolve to the first blocking statement. `start` overrides the
+ * entry node (the editor's "play from here"); it begins at that node with fresh default variable
+ * state — upstream `set`/`add`/`roll` have not run, so downstream conditional flow reflects
+ * defaults, not a real path to that node. Defaults to `story.meta.start`. An unknown `start`
+ * surfaces as a "node not found" error (via `resolve`), never a silent fallback.
+ */
+export function initialState(story: Story, seed?: number, start?: string): GameState {
   const seeded = (seed ?? story.meta.seed ?? 0) | 0;
   return resolve(story, {
-    cursor: { node: story.meta.start, index: 0 },
+    cursor: { node: start ?? story.meta.start, index: 0 },
     vars: {},
     rng: seeded,
     stage: { bg: null, sprites: [] },

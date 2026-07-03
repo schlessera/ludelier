@@ -16,16 +16,19 @@ async function ensureAssets(renderer: PixiRenderer, assets: readonly AssetRef[])
 
 /**
  * Live play preview: mounts the display-only PixiJS renderer once, then replays the
- * session's current story from its start on every edit (`version` bump). Advancing /
- * choosing drives a local `Simulation` — the preview is a throwaway playthrough, never a
- * mutation of the authored story (that only happens through the session's edit tasks).
+ * session's current story on every edit (`version` bump) and whenever the selected
+ * `startNode` changes (the map's "play from here"). Advancing / choosing drives a local
+ * `Simulation` — the preview is a throwaway playthrough, never a mutation of the authored
+ * story (that only happens through the session's edit tasks).
  */
 export function PlayCanvas({
   session,
   version,
+  startNode,
 }: {
   session: EditorSession;
   version: number;
+  startNode?: string;
 }): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<PixiRenderer | null>(null);
@@ -56,7 +59,11 @@ export function PlayCanvas({
     try {
       const story = session.story;
       await ensureAssets(renderer, story.assets);
-      simRef.current = new Simulation(story, { seed: story.meta.seed });
+      // Guard a stale selection (a node the agent has since deleted) — fall back to the
+      // story's own start rather than letting the engine throw "node not found".
+      const start =
+        startNode && story.nodes.some((n) => n.id === startNode) ? startNode : undefined;
+      simRef.current = new Simulation(story, { seed: story.meta.seed, start });
       draw();
       setError(null);
     } catch (e) {
@@ -95,16 +102,19 @@ export function PlayCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Replay from start whenever the story changes.
+  // Replay whenever the story changes or a different start node is selected.
   useEffect(() => {
     if (mountedRef.current) void rebuild();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version]);
+  }, [version, startNode]);
 
   return (
     <section className="panel play">
       <h2>
-        Play preview <span className="muted">· replays from start on every edit</span>
+        Play preview{" "}
+        <span className="muted">
+          · {startNode ? `from ${startNode} · fresh state` : "from start"}
+        </span>
       </h2>
       {error ? (
         <p className="err">preview error: {error}</p>

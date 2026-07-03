@@ -9,12 +9,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@ludelier/authoring": "workspace:*",
     "@ludelier/editor-core": "workspace:*",
     "@ludelier/engine": "workspace:*",
     "@ludelier/renderer-pixi": "workspace:*",
     "@ludelier/schema": "workspace:*",
     "@ludelier/world": "workspace:*",
+    "@xyflow/react": "^12.11.1",
     "pixi.js": "^8.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

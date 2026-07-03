@@ -5,6 +5,8 @@ import type { EditorSnapshot, AgentEvent, AgentRunResult } from "@ludelier/edito
 import { validateStory } from "@ludelier/schema";
 import { openRouterProvider } from "@ludelier/authoring";
 import { PlayCanvas } from "./PlayCanvas";
+import { StoryMap } from "./storymap/StoryMap";
+import { ScriptLens } from "./storymap/ScriptLens";
 import cafeStory from "../../../examples/cafe.story.json";
 
 /** A counter that bumps on every session change (edit / undo / redo / chat) — drives re-render
@@ -22,7 +24,17 @@ export function App(): JSX.Element {
     return new EditorSession(v.data);
   }, []);
   const version = useSessionVersion(session);
-  const snap = session.snapshot();
+  // Snapshot recomputes validateStory + graph analysis, so memoize it on the session-change
+  // counter — selection clicks re-render App but don't re-run that work.
+  const snap = useMemo(() => session.snapshot(), [session, version]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const selectedNode = snap.story.nodes.find((n) => n.id === selected) ?? null;
+
+  // A selected node can vanish when the agent deletes it — drop the stale selection so the
+  // lens, preview, and map agree (and a later node reusing the id isn't silently re-selected).
+  useEffect(() => {
+    if (selected !== null && !snap.story.nodes.some((n) => n.id === selected)) setSelected(null);
+  }, [snap, selected]);
 
   return (
     <div className="app">
@@ -30,8 +42,9 @@ export function App(): JSX.Element {
       <div className="cols">
         <ChatPanel session={session} />
         <div className="center">
-          <PlayCanvas session={session} version={version} />
-          <StoryInspector snap={snap} />
+          <PlayCanvas session={session} version={version} startNode={selected ?? undefined} />
+          <StoryMap snap={snap} selected={selected} onSelect={setSelected} />
+          <ScriptLens node={selectedNode} />
         </div>
         <SidePanel session={session} snap={snap} />
       </div>
@@ -262,52 +275,6 @@ function summarizeParams(params: unknown): string {
   return JSON.stringify(p).slice(0, 60);
 }
 
-function StoryInspector({ snap }: { snap: EditorSnapshot }): JSX.Element {
-  const [selected, setSelected] = useState<string | null>(null);
-  const unreachable = new Set(snap.graph.unreachable);
-  const deadEnds = new Set(snap.graph.deadEnds);
-  const node = snap.story.nodes.find((n) => n.id === selected) ?? null;
-
-  return (
-    <section className="panel inspector">
-      <h2>Story</h2>
-      <p className="muted">
-        {snap.story.meta.title} · start: <code>{snap.story.meta.start}</code>
-      </p>
-      <ul className="nodes">
-        {snap.story.nodes.map((n) => (
-          <li
-            key={n.id}
-            className={n.id === selected ? "sel" : ""}
-            onClick={() => setSelected(n.id)}
-          >
-            <code>{n.id}</code>
-            {n.id === snap.story.meta.start && <span className="tag">start</span>}
-            {unreachable.has(n.id) && <span className="tag bad">unreachable</span>}
-            {deadEnds.has(n.id) && <span className="tag bad">dead end</span>}
-            <span className="muted"> {n.body.length} stmt</span>
-          </li>
-        ))}
-      </ul>
-      {node && (
-        <div className="node-detail">
-          <h3>
-            <code>{node.id}</code>
-          </h3>
-          <ol>
-            {node.body.map((s, i) => (
-              <li key={i}>
-                <code>{s.op}</code> <span className="muted">{summarize(s)}</span>
-                {s.id && <span className="stmt-id muted"> #{s.id}</span>}
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-    </section>
-  );
-}
-
 function SidePanel({ session, snap }: { session: EditorSession; snap: EditorSnapshot }): JSX.Element {
   return (
     <section className="panel side">
@@ -349,18 +316,4 @@ function SidePanel({ session, snap }: { session: EditorSession; snap: EditorSnap
       </button>
     </section>
   );
-}
-
-/** A short human summary of a statement for the inspector. */
-function summarize(s: Record<string, unknown>): string {
-  if (s.op === "say") return `${String(s.who)}: ${String(s.text)}`;
-  if (s.op === "jump") return `→ ${String(s.goto)}`;
-  if (s.op === "branch") {
-    const c = s.cond as { var?: string; cmp?: string; value?: unknown } | undefined;
-    return `if ${String(c?.var)} ${String(c?.cmp)} ${String(c?.value)} → ${String(s.goto)}`;
-  }
-  if (s.op === "choice") return `${(s.options as unknown[] | undefined)?.length ?? 0} option(s)`;
-  if (s.op === "scene") return `bg ${String(s.bg)}`;
-  if (s.op === "show" || s.op === "hide") return String(s.asset ?? s.id ?? "");
-  return "";
 }
