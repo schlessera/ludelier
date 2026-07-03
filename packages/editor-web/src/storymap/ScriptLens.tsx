@@ -59,7 +59,7 @@ export function ScriptLens({
   }
 
   return (
-    <div className="lens">
+    <div className="lens" data-testid="script-lens">
       <h3>
         <code>{node.id}</code> <span className="muted">· {node.body.length} stmt</span>
       </h3>

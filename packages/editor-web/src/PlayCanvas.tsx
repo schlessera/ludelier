@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Simulation } from "@ludelier/engine";
+import { type Action, Simulation } from "@ludelier/engine";
 import { PixiRenderer, type AssetRef } from "@ludelier/renderer-pixi";
 import type { EditorSession } from "@ludelier/editor-core";
 
@@ -44,6 +44,9 @@ export function PlayCanvas({
   const rendererRef = useRef<PixiRenderer | null>(null);
   const simRef = useRef<Simulation | null>(null);
   const mountedRef = useRef(false);
+  /** The preview playthrough's own action history — replayed after an edit so the author
+   *  isn't yanked back to the start on every change. Cleared by Restart / play-from-here. */
+  const actionsRef = useRef<Action[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   function draw(): void {
@@ -54,9 +57,10 @@ export function PlayCanvas({
 
   /** Dispatch a play action, surfacing an engine throw (e.g. an infinite loop) as the inline
    *  error instead of letting it escape the Pixi event handler and crash the preview. */
-  function step(action: () => void): void {
+  function step(action: Action): void {
     try {
-      action();
+      simRef.current?.dispatch(action);
+      actionsRef.current.push(action);
       draw();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -73,12 +77,29 @@ export function PlayCanvas({
       // Guard a stale selection (a node the agent has since deleted) — fall back to the
       // story's own start rather than letting the engine throw "node not found".
       const start = startNode && story.nodes.some((n) => n.id === startNode) ? startNode : undefined;
-      simRef.current = new Simulation(story, { seed: story.meta.seed, start });
+      const sim = new Simulation(story, { seed: story.meta.seed, start });
+      // Replay this preview's recorded actions against the edited story so the play
+      // position survives an edit. The reducer's own guards make stale actions harmless
+      // no-ops (ADVANCE on a choice, out-of-range CHOOSE); only an engine throw — the
+      // edit put an infinite loop on the replayed path — discards and restarts clean.
+      try {
+        for (const a of actionsRef.current) sim.dispatch(a);
+        simRef.current = sim;
+      } catch {
+        actionsRef.current = [];
+        simRef.current = new Simulation(story, { seed: story.meta.seed, start });
+      }
       draw();
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  /** Forget the recorded playthrough and rebuild from the (selected) start. */
+  function restart(): void {
+    actionsRef.current = [];
+    void rebuild();
   }
 
   // Mount the renderer once; tear it down on unmount. `destroy()` requires a completed
@@ -88,8 +109,8 @@ export function PlayCanvas({
   useEffect(() => {
     let disposed = false;
     const renderer = new PixiRenderer({
-      onAdvance: () => step(() => simRef.current?.dispatch({ type: "ADVANCE" })),
-      onChoose: (index) => step(() => simRef.current?.dispatch({ type: "CHOOSE", index })),
+      onAdvance: () => step({ type: "ADVANCE" }),
+      onChoose: (index) => step({ type: "CHOOSE", index }),
     });
     rendererRef.current = renderer;
     void (async () => {
@@ -112,11 +133,17 @@ export function PlayCanvas({
     };
   }, []);
 
-  // Replay whenever the story changes or a different start node is selected.
+  // Rebuild whenever the story changes (holding position via the action replay above),
+  // or from scratch when a different start node is selected — "play from here" is
+  // explicitly a fresh run, so the recorded history is dropped.
   // biome-ignore lint/correctness/useExhaustiveDependencies: version/startNode are the replay signals (session.story is read fresh inside rebuild); adding rebuild would replay every render
   useEffect(() => {
     if (mountedRef.current) void rebuild();
-  }, [version, startNode]);
+  }, [version]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: restart reads refs; startNode is the reset signal
+  useEffect(() => {
+    if (mountedRef.current) restart();
+  }, [startNode]);
 
   return (
     <section className="panel play">
@@ -136,7 +163,7 @@ export function PlayCanvas({
         )}
       </div>
       <div className="play-actions">
-        <button type="button" onClick={() => void rebuild()}>
+        <button type="button" onClick={restart}>
           ⟳ Restart
         </button>
       </div>

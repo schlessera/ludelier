@@ -50,6 +50,12 @@ export function App(): JSX.Element {
     if (selected !== null && !snap.story.nodes.some((n) => n.id === selected)) setSelected(null);
   }, [snap, selected]);
 
+  // e2e readiness flag (mirrors the runtime-web player): flips once the shell has rendered,
+  // so Playwright waits on a concrete signal instead of a timeout.
+  useEffect(() => {
+    document.documentElement.dataset.ready = "1";
+  }, []);
+
   /** Swap in a freshly opened/imported/new session; the old one (and its history) is dropped. */
   function openSession(next: EditorSession): void {
     setSelected(null);
@@ -146,8 +152,12 @@ function Toolbar({
       <div className="brand">
         Ludelier <span className="muted">· editor</span>
       </div>
-      <span className={`badge ${snap.valid ? "ok" : "bad"}`}>{snap.valid ? "valid" : "invalid"}</span>
-      <span className="muted story-title">{snap.story.meta.title}</span>
+      <span className={`badge ${snap.valid ? "ok" : "bad"}`} data-testid="validity-badge">
+        {snap.valid ? "valid" : "invalid"}
+      </span>
+      <span className="muted story-title" data-testid="story-title">
+        {snap.story.meta.title}
+      </span>
       {err && <span className="err">{err}</span>}
       <div className="spacer" />
       <button
@@ -188,6 +198,7 @@ function Toolbar({
       </button>
       <input
         className="node-id"
+        data-testid="new-node-id"
         placeholder="new node id"
         value={newId}
         onChange={(e) => setNewId(e.target.value)}
@@ -232,8 +243,13 @@ function FeedLine({ e }: { e: AgentEvent }): JSX.Element | null {
   return <li className="ev-stop muted">■ {e.reason}</li>;
 }
 
+/** localStorage slot for the opt-in remembered BYOK key. Plain text by necessity (there is
+ *  no client-side secret to encrypt with) — hence opt-in, labelled, and easy to clear. */
+const KEY_STORE = "ludelier.byok.openrouter";
+
 function ChatPanel({ session }: { session: EditorSession }): JSX.Element {
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem(KEY_STORE) ?? "");
+  const [remember, setRemember] = useState(() => localStorage.getItem(KEY_STORE) !== null);
   const [model, setModel] = useState("openai/gpt-5-mini");
   const [prompt, setPrompt] = useState("Add a full branching discussion about careers.");
   const [running, setRunning] = useState(false);
@@ -317,8 +333,23 @@ function ChatPanel({ session }: { session: EditorSession }): JSX.Element {
           type="password"
           placeholder="OpenRouter API key (BYOK)"
           value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
+          onChange={(e) => {
+            setApiKey(e.target.value);
+            if (remember) localStorage.setItem(KEY_STORE, e.target.value);
+          }}
         />
+        <label className="remember">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => {
+              setRemember(e.target.checked);
+              if (e.target.checked) localStorage.setItem(KEY_STORE, apiKey);
+              else localStorage.removeItem(KEY_STORE);
+            }}
+          />
+          Remember key on this device (stored unencrypted in this browser)
+        </label>
         <input placeholder="model slug" value={model} onChange={(e) => setModel(e.target.value)} />
         <textarea rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} disabled={running} />
         {running ? (
@@ -441,6 +472,64 @@ function EditTasks({
   );
 }
 
+/**
+ * The edit log grouped into consecutive runs, with a Revert button on the run that can
+ * actually be reverted: `revertRun` is defined only for a contiguous TAIL of the history
+ * (KTD-11), so exactly one group — the last — is actionable; earlier runs show why not.
+ */
+function RunHistory({ session, snap }: { session: EditorSession; snap: EditorSnapshot }): JSX.Element {
+  const [err, setErr] = useState<string | null>(null);
+  const runs: { runId: string; commands: string[] }[] = [];
+  for (const r of snap.records) {
+    const last = runs[runs.length - 1];
+    if (last && last.runId === r.runId) last.commands.push(r.command);
+    else runs.push({ runId: r.runId, commands: [r.command] });
+  }
+  const tail = runs[runs.length - 1];
+
+  function revert(runId: string): void {
+    const res = session.revertRun(runId);
+    setErr(res.success ? null : res.issues.map((i) => i.message).join("; "));
+  }
+
+  return (
+    <>
+      <ol className="history">
+        {runs.map((run, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: run groups are re-derived per snapshot and only ever truncated from the tail — positional identity is stable
+          <li key={`${i}-${run.runId}`} className="run-group">
+            <div className="run-head">
+              <span className="muted">
+                {run.runId.slice(0, 12)} · {run.commands.length} edit(s)
+              </span>
+              {run === tail && (
+                <button
+                  type="button"
+                  className="danger small"
+                  onClick={() => revert(run.runId)}
+                  disabled={session.busy}
+                  title="Drop this run's edits (only the most recent run can be reverted)"
+                >
+                  Revert
+                </button>
+              )}
+            </div>
+            <ul className="run-cmds">
+              {run.commands.map((c, j) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: commands within a run are append-only and re-derived per snapshot
+                <li key={j}>
+                  <code>{c}</code>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ol>
+      {err && <p className="err">{err}</p>}
+    </>
+  );
+}
+
 function SidePanel({
   session,
   snap,
@@ -491,13 +580,7 @@ function SidePanel({
       {snap.records.length === 0 ? (
         <p className="muted">No edits yet.</p>
       ) : (
-        <ol className="history">
-          {snap.records.map((r) => (
-            <li key={r.seq}>
-              <code>{r.command}</code> <span className="muted">{r.runId.slice(0, 8)}</span>
-            </li>
-          ))}
-        </ol>
+        <RunHistory session={session} snap={snap} />
       )}
       <div className="log-actions">
         <button

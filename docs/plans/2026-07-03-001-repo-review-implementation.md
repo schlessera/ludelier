@@ -121,14 +121,26 @@ swap, failed/colliding asset preload → inline preview error):
 
 ## Known review findings NOT in scope of this pass (tracked for later)
 
-- renderer-pixi unit tests (0 today), DPI/`autoDensity`/resize, keyboard + ARIA input
-  paths, audio (P3), save slots/backlog/text-speed UI.
-- editor-web component tests + Playwright smoke; error boundary; responsive layout;
-  BYOK "remember key" opt-in; per-run revert from History; map viewport persistence.
-- `revertRun` beyond contiguous tail; typed-var declaration; `add/remove-choice-option`
-  ops; bounded all-paths simulate surfacing; property/fuzz tests over `applyEdit`.
+- ~~renderer-pixi unit tests (0 today), DPI, keyboard + ARIA input paths~~ (✅ landed
+  2026-07-03 — pure display math extracted to `renderer-pixi/src/layout.ts` + first unit
+  tests in `test/layout.test.ts`; `RendererOptions.resolution` defaults to
+  `devicePixelRatio` for crisp HiDPI rendering (no `autoDensity` — displayed size stays
+  CSS-owned so the editor preview's fluid sizing keeps working; baseline unchanged at
+  DPR 1); Enter/Space/1–9 keyboard input through the reducer's own guards + a polite
+  `aria-live` region mirroring the pending step, with an e2e keyboard test). Resize
+  handling beyond DPI (live viewport tracking) still deferred; audio (P3), save
+  slots/backlog/text-speed UI still open.
+- editor-web component tests + ~~Playwright smoke~~ (✅ smoke landed 2026-07-03 —
+  `editor` e2e project, `packages/editor-web/e2e/editor.spec.ts`); ~~error boundary;
+  BYOK "remember key" opt-in; per-run revert from History~~ (✅ landed 2026-07-03
+  follow-up, changeset `editor-ux-batch` — plus play position now survives edits via
+  action replay, browser-verified); responsive layout; map viewport persistence.
+- `revertRun` beyond contiguous tail; typed-var declaration; ~~`add/remove-choice-option`
+  ops~~ (✅ landed 2026-07-03 as `add/update/remove-choice-option`); bounded all-paths
+  simulate surfacing; property/fuzz tests over `applyEdit`.
 - Live-provider smoke test in CI (needs a key/secret story); transcript/`raw` redaction
-  before persisting provenance; coverage reporting; Playwright browser caching in CI.
+  before persisting provenance. ~~coverage reporting; Playwright browser caching in CI~~ —
+  ✅ landed 2026-07-03 follow-up (`just coverage`, lockfile-keyed Chromium cache).
 - npm-publish prerequisites (build step, `types`, compiled `bin`) — deliberate, see
   `release.yml` header.
 

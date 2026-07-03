@@ -291,6 +291,63 @@ button.danger:hover:not(:disabled) {
   border-bottom: 1px solid var(--line);
 }
 
+/* History grouped by run: header row (id + revert) over the run's command list. */
+.history .run-group {
+  padding: 6px 0;
+}
+
+.run-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.run-cmds {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0 0 0 12px;
+}
+
+.run-cmds li {
+  padding: 1px 0;
+  border-bottom: none;
+}
+
+button.small {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+/* Last-resort crash screen (ErrorBoundary). */
+.boundary {
+  max-width: 36rem;
+  margin: 15vh auto 0;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.boundary h1 {
+  font-size: 18px;
+  margin: 0;
+}
+
+/* BYOK remember-key opt-in row. */
+.remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.remember input {
+  width: auto;
+}
+
 .nodes li {
   display: flex;
   align-items: center;

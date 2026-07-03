@@ -289,6 +289,12 @@ function isAllEmpty(fields: FormField[], values: FormValues): boolean {
     switch (f.kind) {
       case "boolean":
         return v !== true;
+      case "enum":
+        // A required enum renders pre-selected (its schema default, else the first
+        // option — mirror emptyValue's seed), so "still at the seed" counts as
+        // untouched — otherwise an optional object containing one (e.g. a condition's
+        // `cmp`) would always collect and fail on its empty siblings.
+        return str(v) === "" || str(v) === (f.initial ?? (f.required ? (f.options[0] ?? "") : ""));
       case "object":
         return typeof v === "object" && v !== null && !("tag" in (v as object))
           ? isAllEmpty(f.fields, v as FormValues)

@@ -114,6 +114,63 @@ describe("deriveTaskFields — real manifest schemas", () => {
   });
 });
 
+describe("deriveTaskFields — choice-option tasks (a new world task gets a form with zero editor code)", () => {
+  it("derives a real object form for add-choice-option's option (label/goto/if — no raw-JSON fallback)", () => {
+    const fields = deriveTaskFields(schemaOf("add-choice-option"));
+    expect(fields.map((f) => f.name)).toEqual(["nodeId", "statementId", "option", "beforeIndex"]);
+    const option = field(fields, "option");
+    expect(option.kind).toBe("object");
+    if (option.kind !== "object") return;
+    expect(field(option.fields, "label")).toMatchObject({ kind: "string", required: true });
+    expect(field(option.fields, "goto")).toMatchObject({ kind: "string", required: true });
+    const cond = field(option.fields, "if");
+    expect(cond).toMatchObject({ kind: "object", required: false });
+    if (cond.kind !== "object") return;
+    expect(field(cond.fields, "cmp")).toMatchObject({
+      kind: "enum",
+      options: ["eq", "ne", "gt", "lt", "gte", "lte"],
+    });
+    expect(field(fields, "beforeIndex")).toMatchObject({ kind: "number", integer: true, required: false });
+  });
+
+  it("derives a required integer index for update/remove-choice-option", () => {
+    expect(field(deriveTaskFields(schemaOf("update-choice-option")), "index")).toMatchObject({
+      kind: "number",
+      integer: true,
+      required: true,
+    });
+    expect(field(deriveTaskFields(schemaOf("remove-choice-option")), "index")).toMatchObject({
+      kind: "number",
+      integer: true,
+      required: true,
+    });
+  });
+
+  it("collects an update-choice-option form (gated option) back into valid params", () => {
+    const fields = deriveTaskFields(schemaOf("update-choice-option"));
+    const values: FormValues = {
+      ...emptyValues(fields),
+      nodeId: "a",
+      statementId: "a#1",
+      index: "0",
+      option: {
+        label: "To b",
+        goto: "b",
+        if: { var: "trust", cmp: "gte", value: "2" },
+      },
+    };
+    expect(collectParams(fields, values)).toEqual({
+      success: true,
+      params: {
+        nodeId: "a",
+        statementId: "a#1",
+        index: 0,
+        option: { label: "To b", goto: "b", if: { var: "trust", cmp: "gte", value: 2 } },
+      },
+    });
+  });
+});
+
 describe("initialValues — prefill", () => {
   const updFields = deriveTaskFields(schemaOf("update-statement"));
 
@@ -238,5 +295,24 @@ describe("collectParams", () => {
     });
     const bad = collectParams(fields, { [RAW_PARAMS]: "{oops" });
     expect(bad.success).toBe(false);
+  });
+
+  it("omits an untouched optional object whose required enum sits at its seed", () => {
+    // add-choice-option's `option.if` is optional but contains a required `cmp` enum that
+    // renders pre-selected — leaving the condition untouched must NOT collect an empty
+    // {var:"",cmp:"eq",value:""} that the world would then reject.
+    const fields = deriveTaskFields(schemaOf("add-choice-option"));
+    const values = emptyValues(fields) as FormValues & { option: FormValues };
+    const filled = {
+      ...values,
+      nodeId: "start",
+      statementId: "start#4",
+      option: { ...values.option, label: "Wave", goto: "sit" },
+    };
+    const res = collectParams(fields, filled);
+    expect(res).toEqual({
+      success: true,
+      params: { nodeId: "start", statementId: "start#4", option: { label: "Wave", goto: "sit" } },
+    });
   });
 });
