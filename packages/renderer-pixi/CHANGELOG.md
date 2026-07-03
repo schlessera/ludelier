@@ -1,5 +1,15 @@
 # @ludelier/renderer-pixi
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [b4beead]
+- Updated dependencies [e2da20a]
+- Updated dependencies [b4beead]
+- Updated dependencies [d746333]
+  - @ludelier/engine@0.2.0
+
 ## 0.1.0
 
 ### Minor Changes
