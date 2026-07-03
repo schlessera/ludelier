@@ -38,6 +38,11 @@ import {
   moveStatementTask,
   removeStatementTask,
 } from "./manipulate/statements";
+import {
+  addChoiceOptionTask,
+  updateChoiceOptionTask,
+  removeChoiceOptionTask,
+} from "./manipulate/choice-options";
 
 /**
  * Build a fresh world with every task registered. The single registry is the
@@ -71,6 +76,10 @@ export function createWorld(): Registry {
   world.register(updateStatementTask);
   world.register(moveStatementTask);
   world.register(removeStatementTask);
+  // Choice-option ops — edit one option in place (by index) without rebuilding the choice.
+  world.register(addChoiceOptionTask);
+  world.register(updateChoiceOptionTask);
+  world.register(removeChoiceOptionTask);
   return world;
 }
 
