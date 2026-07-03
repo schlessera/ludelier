@@ -13,7 +13,7 @@ export function StoryNode({ data }: NodeProps<StoryFlowNode>): JSX.Element {
     .filter(Boolean)
     .join(" ");
   return (
-    <div className={cls}>
+    <div className={cls} data-testid={`map-node-${data.label}`}>
       <Handle type="target" position={Position.Top} />
       <span className="map-node-id">{data.label}</span>
       {data.isStart && <span className="tag">start</span>}

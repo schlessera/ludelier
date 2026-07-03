@@ -86,23 +86,32 @@ lint-fix:
 test *args:
     pnpm test {{ args }}
 
-# Run Playwright e2e against a self-managed dev server (curl health-check).
+# Unit tests with a v8 coverage report (text + coverage/index.html).
+[group('quality')]
+coverage:
+    pnpm coverage
+
+# Run Playwright e2e against self-managed dev servers (curl health-check).
 
 # Dodges a WSL2 quirk where Node's connect to a not-yet-bound port hangs ~135s.
 [group('quality')]
 e2e *args:
     #!/usr/bin/env bash
     set -euo pipefail
-    free_port() { lsof -ti tcp:5179 2>/dev/null | xargs -r kill 2>/dev/null || true; }
-    free_port  # clear any orphan from a previous run
+    free_ports() { for p in 5179 5180; do lsof -ti tcp:$p 2>/dev/null | xargs -r kill 2>/dev/null || true; done; }
+    free_ports  # clear any orphans from a previous run
     pnpm --filter @ludelier/runtime-web dev --host 127.0.0.1 --port 5179 --strictPort >/tmp/ludelier-e2e-server.log 2>&1 &
-    server=$!
-    trap 'kill "$server" 2>/dev/null || true; free_port' EXIT
-    for i in $(seq 1 120); do
-        if curl -fsS --connect-timeout 1 -o /dev/null http://127.0.0.1:5179/ 2>/dev/null; then break; fi
-        if [ "$i" = 120 ]; then echo "dev server failed to start:" >&2; cat /tmp/ludelier-e2e-server.log >&2; exit 1; fi
-        sleep 0.25
-    done
+    pnpm --filter @ludelier/editor-web dev --host 127.0.0.1 --port 5180 --strictPort >/tmp/ludelier-e2e-editor.log 2>&1 &
+    trap 'kill $(jobs -p) 2>/dev/null || true; free_ports' EXIT
+    wait_port() {
+        for i in $(seq 1 120); do
+            if curl -fsS --connect-timeout 1 -o /dev/null "http://127.0.0.1:$1/" 2>/dev/null; then return 0; fi
+            if [ "$i" = 120 ]; then echo "dev server on :$1 failed to start:" >&2; cat "$2" >&2; return 1; fi
+            sleep 0.25
+        done
+    }
+    wait_port 5179 /tmp/ludelier-e2e-server.log
+    wait_port 5180 /tmp/ludelier-e2e-editor.log
     E2E_EXTERNAL_SERVER=1 pnpm e2e {{ args }}
 
 # Regenerate Playwright visual baselines (commit the result).
