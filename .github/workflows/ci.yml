@@ -57,9 +57,18 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # --with-deps installs the OS libraries Chromium needs on the runner.
+      # Cache the Chromium download (~150 MB) keyed on the lockfile (which pins the
+      # Playwright version). OS libraries are not cacheable — install-deps always runs.
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       # Visual baselines are tagged -chromium-linux.png; the runner must be Linux to match.
       - run: pnpm exec playwright install --with-deps chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+      - run: pnpm exec playwright install-deps chromium
+        if: steps.pw-cache.outputs.cache-hit == 'true'
       - run: pnpm e2e
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
