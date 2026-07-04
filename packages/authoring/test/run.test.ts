@@ -332,6 +332,54 @@ describe("runAgent (hermetic, scripted provider)", () => {
     expect(res.completed).toBe(false);
   });
 
+  it("accepts done with a non-blocking warning for a runtime-unreached node", async () => {
+    // Base: start says, sets trust=0, offers one always-on choice to an ending. The run
+    // adds node "secret" (with an end) and a SECOND choice option gated on trust >= 1 —
+    // statically reachable, but no runtime path can enable it (trust is always 0, and it
+    // IS written, so the unwritten-var check stays quiet). The gate must accept `done`
+    // (nothing is broken) while warning about the unreachable-in-practice branch.
+    const story: Story = {
+      meta: { id: "t", title: "T", start: "a" },
+      characters: [{ id: "n", name: "N" }],
+      assets: [],
+      nodes: [
+        {
+          id: "a",
+          body: [
+            { op: "say", who: "n", text: "hi" },
+            { op: "set", var: "trust", value: 0 },
+            { op: "choice", options: [{ label: "go", goto: "z" }] },
+          ],
+        },
+        { id: "z", body: [{ op: "end" }] },
+      ],
+    };
+    const provider = scriptedTools([
+      [call("create-node", { id: "secret" }, "1")],
+      [call("add-statement", { nodeId: "secret", statement: { op: "end" } }, "2")],
+      [
+        call(
+          "add-choice-option",
+          {
+            nodeId: "a",
+            statementId: "a#2",
+            option: { label: "sneak", goto: "secret", if: { var: "trust", cmp: "gte", value: 1 } },
+          },
+          "3",
+        ),
+      ],
+      [call("done", {}, "4")],
+    ]);
+    const res = await runAgent({ provider, prompt: "x", story, runId: "run-1", maxSteps: 10 });
+    expect(res.completed).toBe(true);
+    expect(res.ok).toBe(true); // warnings never block
+    expect(res.verification.runtimeUnreached).toContain("secret");
+    // the accepted done's tool result carried the warning to the model
+    const doneMsg = res.transcript.filter((m) => m.role === "tool").at(-1);
+    expect(doneMsg?.content).toContain('"ok":true');
+    expect(doneMsg?.content).toContain("no play-through can currently reach");
+  });
+
   it("continues past a checkpoint the caller approves", async () => {
     let asked = 0;
     const provider = scriptedTools([

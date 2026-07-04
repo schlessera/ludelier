@@ -69,7 +69,7 @@ export type AgentEvent =
   | { kind: "assistant"; text: string }
   | { kind: "edit"; command: string; params: unknown; success: boolean; issues: Issue[] }
   | { kind: "query"; task: string; success: boolean }
-  | { kind: "verify"; clean: boolean; problems: string[] }
+  | { kind: "verify"; clean: boolean; problems: string[]; warnings?: string[] }
   | { kind: "stop"; reason: StopReason };
 
 /** Self-verification report — plain data (no `{success}` envelope leaks across the boundary). */
@@ -89,6 +89,10 @@ export interface Verification {
   endReachable: boolean;
   /** Whether playing the story throws (infinite jump loop) — caught, not propagated. */
   crashed: boolean;
+  /** Statically reachable nodes no runtime play-through ever visits (every path to them is
+   *  gated off by conditions). Not a hard error — a WIP branch legitimately looks like this —
+   *  but worth telling the author/agent about (surfaced as a gate warning, non-blocking). */
+  runtimeUnreached: string[];
   /** `reached` is real behavioural coverage (every explored path), not just the linear head;
    *  `hash` is the seeded linear-run fingerprint (a determinism probe). */
   simulate: { hash: string; reached: string[] } | null;
@@ -127,6 +131,9 @@ export interface AgentRunResult {
 interface Gate {
   clean: boolean;
   problems: string[];
+  /** Non-blocking observations delivered WITH an accepted `done` — real enough to mention,
+   *  not real enough to wedge the loop on (e.g. a branch every runtime path gates off). */
+  warnings: string[];
 }
 
 function describeGate(baseline: Verification, current: Verification): Gate {
@@ -164,7 +171,14 @@ function describeGate(baseline: Verification, current: Verification): Gate {
     );
   }
   for (const m of newTypeMismatches) problems.push(m);
-  return { clean: current.valid && problems.length === 0, problems };
+  // Non-blocking: a node the run made statically reachable that no runtime path actually
+  // visits. Legitimate mid-build (a branch pending its unlock), so it must not wedge the
+  // loop — but silently shipping it is how "content nobody can see" happens.
+  const warnings = added(current.runtimeUnreached, baseline.runtimeUnreached).map(
+    (id) =>
+      `node "${id}" is wired in but no play-through can currently reach it — every path to it is gated off by conditions. If that's not intentional, relax a condition or add an ungated route.`,
+  );
+  return { clean: current.valid && problems.length === 0, problems, warnings };
 }
 
 /** Loop-control tool — injected into the toolset but NOT a world task (absent from describe()). */
@@ -262,6 +276,14 @@ function verify(world: Registry, story: Story): Verification {
   } catch {
     sim = null; // the story loops at runtime — explore.crashed already captures it
   }
+  // Statically reachable but never visited by the condition-honouring walk: every path in
+  // is gated off. Only meaningful when both analyses ran (else report nothing, not noise).
+  const runtimeReached = new Set(explore?.reached ?? []);
+  const staticallyUnreachable = new Set(graph?.unreachable ?? []);
+  const runtimeUnreached =
+    graph && explore && !explore.crashed
+      ? story.nodes.map((n) => n.id).filter((id) => !staticallyUnreachable.has(id) && !runtimeReached.has(id))
+      : [];
   return {
     valid: v.success,
     issues: v.success ? [] : v.issues,
@@ -272,6 +294,7 @@ function verify(world: Registry, story: Story): Verification {
     stuck: explore?.stuck ?? [],
     endReachable: explore?.endReachable ?? false,
     crashed: explore?.crashed ?? false,
+    runtimeUnreached,
     simulate: sim ? { hash: sim.hash, reached: explore?.reached ?? sim.reached } : null,
   };
 }
@@ -364,7 +387,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     // accept it if the run is clean — otherwise feed the graph problems back and continue.
     if (calls.length === 0) {
       const gate = gateNow();
-      emit({ kind: "verify", clean: gate.clean, problems: gate.problems });
+      emit({ kind: "verify", clean: gate.clean, problems: gate.problems, warnings: gate.warnings });
       if (gate.clean) {
         completed = true;
         break;
@@ -378,11 +401,16 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
       if (c.name === DONE_TOOL.name) {
         // `done` is a self-verification gate: accept only a clean run; otherwise return the
         // introduced unreachable / dead-end / validity issues so the model self-corrects.
+        // Warnings ride along on acceptance — visible, never blocking.
         const gate = gateNow();
-        emit({ kind: "verify", clean: gate.clean, problems: gate.problems });
+        emit({ kind: "verify", clean: gate.clean, problems: gate.problems, warnings: gate.warnings });
         transcript.push({
           role: "tool",
-          content: JSON.stringify(gate.clean ? { ok: true } : { ok: false, issues: gate.problems }),
+          content: JSON.stringify(
+            gate.clean
+              ? { ok: true, ...(gate.warnings.length > 0 ? { warnings: gate.warnings } : {}) }
+              : { ok: false, issues: gate.problems },
+          ),
           toolCallId: c.id,
         });
         if (gate.clean) {

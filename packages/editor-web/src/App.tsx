@@ -78,7 +78,11 @@ export function App(): JSX.Element {
             version={version}
             startNode={selected ?? undefined}
           />
-          <StoryMap snap={snap} selected={selected} onSelect={setSelected} />
+          {/* Keyed too: React Flow's fitView only fires on init, so without a remount an
+              Open/New would keep the previous story's pan/zoom over a different graph.
+              Within a session, edits deliberately do NOT refit — the viewport holds, and
+              the Controls' fit-view button re-frames on demand. */}
+          <StoryMap key={`map-${key}`} snap={snap} selected={selected} onSelect={setSelected} />
           <ScriptLens key={`lens-${key}`} node={selectedNode} session={session} manifest={manifest} />
         </div>
         <SidePanel
@@ -234,10 +238,12 @@ function FeedLine({ e }: { e: AgentEvent }): JSX.Element | null {
     );
   }
   if (e.kind === "verify") {
-    return e.clean ? (
-      <li className="ev-verify ok">✓ verified clean</li>
-    ) : (
-      <li className="ev-verify bad">⚠ {e.problems.join("; ")}</li>
+    if (!e.clean) return <li className="ev-verify bad">⚠ {e.problems.join("; ")}</li>;
+    return (
+      <li className="ev-verify ok">
+        ✓ verified clean
+        {e.warnings && e.warnings.length > 0 && <span className="muted"> · ⚠ {e.warnings.join("; ")}</span>}
+      </li>
     );
   }
   return <li className="ev-stop muted">■ {e.reason}</li>;
