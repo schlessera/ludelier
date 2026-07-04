@@ -134,10 +134,15 @@ swap, failed/colliding asset preload → inline preview error):
   `editor` e2e project, `packages/editor-web/e2e/editor.spec.ts`); ~~error boundary;
   BYOK "remember key" opt-in; per-run revert from History~~ (✅ landed 2026-07-03
   follow-up, changeset `editor-ux-batch` — plus play position now survives edits via
-  action replay, browser-verified); responsive layout; map viewport persistence.
+  action replay, browser-verified); ~~responsive layout; map viewport persistence~~
+  (✅ landed 2026-07-04, changeset `editor-responsive-map` — 1280/820px breakpoints
+  browser-verified; map keyed by session swap, edits keep the viewport, Controls' fit
+  button re-frames).
 - `revertRun` beyond contiguous tail; typed-var declaration; ~~`add/remove-choice-option`
-  ops~~ (✅ landed 2026-07-03 as `add/update/remove-choice-option`); bounded all-paths
-  simulate surfacing; property/fuzz tests over `applyEdit`.
+  ops~~ (✅ landed 2026-07-03 as `add/update/remove-choice-option`); ~~bounded all-paths
+  simulate surfacing~~ (✅ landed 2026-07-04 as the gate's non-blocking `runtimeUnreached`
+  warnings, changeset `gate-warnings-fuzz`); ~~property/fuzz tests over `applyEdit`~~
+  (✅ landed 2026-07-04 — seeded 2×400-command fuzz in `packages/world/test/fuzz.test.ts`).
 - Live-provider smoke test in CI (needs a key/secret story); transcript/`raw` redaction
   before persisting provenance. ~~coverage reporting; Playwright browser caching in CI~~ —
   ✅ landed 2026-07-03 follow-up (`just coverage`, lockfile-keyed Chromium cache).
