@@ -40,9 +40,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      # Pinned: `just --fmt` output differs across just versions (it is --unstable for a
+      # reason), so the gate must run the same version the justfile was formatted with.
+      # Bump this together with a local `just fmt` commit.
       - uses: taiki-e/install-action@v2
         with:
-          tool: just
+          tool: just@1.48.0
       - run: just fmt-check
 
   e2e:
