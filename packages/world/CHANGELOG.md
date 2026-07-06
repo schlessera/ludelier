@@ -1,4 +1,4 @@
-# @ludelier/schema
+# @ludelier/world
 
 ## 0.2.0
 
@@ -27,6 +27,42 @@
 
   Demo (`examples/cafe.story.json`): the café story now uses `branch` for two state-driven outcomes — a luck-based "lucky" ending (the previously-dead `roll` of `luck` now matters) and a trust-based regret line on the leave path — adds `her` as a speaking character, and a new "Ask about her day" path. The opening frame and the existing play-through are unchanged (e2e green).
 
+- 6eddc7e: Add choice-option manipulate tasks — edit a choice's options in place, by index.
+
+  Until now, changing one option of a `choice` meant rebuilding the whole statement (remove-statement + add-statement, or the editor form's raw-JSON options field). Three new registry tasks target the choice by its stable statement id and one option by 0-based index (the same convention `rewire-goto` uses):
+
+  - `add-choice-option {nodeId, statementId, option, beforeIndex?}` — append, or insert at `beforeIndex`.
+  - `update-choice-option {nodeId, statementId, index, option}` — replace one option in place.
+  - `remove-choice-option {nodeId, statementId, index}` — remove one; refuses to remove the LAST remaining option (an option-less choice strands the player — no CHOOSE can advance, explore reports the node as stuck) with a clear issue instead of a generic re-validation error.
+
+  `option` reuses the schema's `ChoiceOption` ({label, goto, if?}), so an option's `goto` is cross-ref-checked by the always-valid `applyEdit` like every other edit. Because the tasks are registered in the shared registry, the `describe()` manifest (21 → 24 tasks) carries them to the CLI, the LLM toolset, the MCP server, and the editor's manifest-driven forms with zero further code — and the option's nested shape derives as a real form (label/goto/if fields), not a raw-JSON fallback. The agent system prompt teaches the ops so the model edits options by index instead of rewriting the whole choice.
+
+- 8b9d9d4: New `@ludelier/editor-core` package: the editor's headless session façade.
+
+  `EditorSession` is the single parity surface a human UI and the agent both drive (AGENTS.md: anything a human can do in the editor, the agent can do through the same tasks). It owns the current `Story` as an event-sourced `EditLog`, routes reads to the world's understand tasks (`query`) and writes to the manipulate tasks (`edit`) through the always-valid `applyEdit` chokepoint, exposes `undo`/`redo`/`revertRun` + `canUndo`/`canRedo`, emits `change` events for a view to re-render, round-trips through `exportLog`/`fromLog`, and runs the agent `chat` loop **on the session's own log** so generated edits join the same undoable history. Pure — no DOM/React/network of its own (the LLM provider is injected); tested in Vitest without a browser. The React editor shell will be a thin view bound to it.
+
+  Supporting changes:
+
+  - `@ludelier/world`: `EditLog` gains `canUndo()` / `canRedo()`.
+  - `@ludelier/authoring`: `runAgent` accepts an existing `log` to append the run onto (and measures its baseline/diff against that log's current story), so a session's chat edits integrate with its history.
+
+- 0c00a17: Replace the flattened append-_/insert-_ statement spine with generic statement tools.
+
+  The per-kind × per-position command design (append-say, append-show, …, insert-say, …) grew the toolset toward 50+ as statement kinds multiply — and the long tail (set/add/roll/scene/hide) was never even built. It was a hedge against LLMs mis-filling a discriminated union; that no longer holds (Zod 4 emits a clean `oneOf`, and a prototype confirmed gpt-5-mini fills the union reliably across kinds).
+
+  - `add-statement {nodeId, statement, before?}` — one tool for every statement kind (and every future kind): `statement` is the schema's `Statement` union; appends at the end, or inserts before `before` (a statement id).
+  - `update-statement {nodeId, statementId, statement}` — replace a statement in place (keeps its id).
+  - `move-statement {nodeId, statementId, before?}` — reorder.
+  - `remove-statement` / `rewire-goto` unchanged (target by id).
+
+  Manipulate tools drop from 15 to 10 and stay flat as the DSL grows. All guardrails are unchanged (terminal-position rule, say.who, cross-refs); the EditLog now bakes the stable id into `params.statement.id` for `add-statement`. The agent prompt and the editor's edit feed are updated for the new tools.
+
+- b4beead: Close the three open robustness issues from the architecture review.
+
+  - **Defined comparison semantics (no silent coercion).** `compare` (engine reducer) no longer casts operands: `eq`/`ne` stay strict, and the ordered ops (`gt`/`lt`/`gte`/`lte`) are number-only — a non-number operand yields `false` instead of a coerced/lexical surprise. New `conditionTypeIssues` (world) statically flags ordered comparisons that can't behave as intended (a non-number literal, or a var `set` to a non-number elsewhere); `runAgent`'s gate surfaces newly-introduced ones so the agent fixes them before `done`.
+  - **EditorSession run lock.** An agent `chat` run mutates the shared log across `await` boundaries and snapshots a pre-run baseline, so a concurrent human edit would corrupt the run's diff and break `revertRun`. `edit`/`revertRun` now refuse (return a failure) and `undo`/`redo`/a second `chat` throw while a run is in flight; a new `busy` getter lets the UI disable its controls. Reads stay allowed.
+  - **Recoverable runtime cycle.** The reducer now throws a typed `StatementBudgetError` (exported from `@ludelier/engine`) on an infinite jump loop. The web player (`runtime-web`) and the editor play preview (`editor-web`) catch it — and any playback throw — and show a recoverable error (with a restart) instead of white-screening.
+
 - b8fe968: Repo-review correctness batch (core): transcript in the hash, choice is terminal, hardened importLog, agent-loop race fixes, provider retries.
 
   Six fixes from the 2026-07-03 repo review (see `docs/plans/2026-07-03-001-repo-review-implementation.md`):
@@ -49,6 +85,10 @@
 
   Verified live: asked to remove one statement from a node, the agent now removes exactly the right one by id; the others keep their ids.
 
+- 354782d: Add `deriveFlowEdges` + the `flow-edges` understand task — labelled node transitions for the editor's structure map.
+
+  `GraphReport.edges` is bare `{from,to}` adjacency, which can't drive a map that labels and styles edges. `deriveFlowEdges(story)` walks each node's body (id-sorted for determinism) and returns one `FlowEdge` per `jump` / `branch` / `choice` option, carrying the edge `kind`, a human `label` (choice text, or the condition for a `branch` / gated option), a `conditional` flag, and the originating statement id. It is derived the same way the engine transitions between nodes, so the map matches real execution. Exposed both as a pure import and as the registered `flow-edges` task (agent-native parity — the agent can query the same edges the human sees). The existing `GraphReport` shape is unchanged.
+
 - 93bb287: Reject dead code after a terminal statement, and add `insert-*` to add content before a statement.
 
   Asked to add sentences to an ending node, the agent appended them — but the node already ended with `end`, so the new lines landed _after_ it (dead code that never plays). `validateStory` accepted it (statement order wasn't checked) and the run verified "clean".
@@ -66,9 +106,15 @@
   - `@ludelier/cli`: registry-derived `world describe|query|edit|undo|redo|export` and `author run` subcommands; the entrypoint is now an exported `run(argv)`.
   - `@ludelier/schema`: extracted a shared `toJsonSchema(schema)` helper (used by the world manifest); `storyJsonSchema()` now calls it.
 
-## 0.1.0
+### Patch Changes
 
-### Minor Changes
-
-- 00a221d: P0 headless core: deterministic Redux-style engine (seeded RNG, stable-hash snapshots, JSONL trace record/replay), Zod-validated Story DSL (`say`/`set`/`add`/`roll`/`choice`/`jump`/`end` + cross-reference validation + JSON Schema export), and a `validate`/`simulate`/`replay` CLI. No renderer yet.
-- fd44662: P1 backgrounds + character sprites. Story DSL gains a central `assets` declaration and three non-blocking statements — `scene` (set/clear background, clears sprites), `show` (sprite in a named slot at left/center/right), `hide` — all cross-reference validated. The engine tracks a persistent `stage` (background + id-sorted sprites) threaded through the reducer and folded into the deterministic state hash, so replay covers visual state. The PixiJS renderer preloads declared assets, draws a cover-fit background and bottom-anchored sprites under the dialog UI on dedicated (configurable) layer z-indices, and crossfades background/sprite changes with a settle signal for screenshot tests. The runtime preloads assets and the `cafe` example now plays as a real visual novel (café background + character). `cli simulate` reports `stage`.
+- Updated dependencies [b4beead]
+- Updated dependencies [e2da20a]
+- Updated dependencies [b4beead]
+- Updated dependencies [b8fe968]
+- Updated dependencies [b8a118d]
+- Updated dependencies [d746333]
+- Updated dependencies [93bb287]
+- Updated dependencies [e6ec2c4]
+  - @ludelier/schema@0.2.0
+  - @ludelier/engine@0.2.0
