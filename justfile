@@ -142,7 +142,7 @@ changes:
 # Consume changesets: bump versions + write CHANGELOGs + refresh lockfile.
 [group('release')]
 version:
-    pnpm version
+    pnpm run version
 
 # Publish to npm. OFF until packages go public (see release.yml header).
 [confirm('Publishing is disabled until packages are public. Continue anyway?')]

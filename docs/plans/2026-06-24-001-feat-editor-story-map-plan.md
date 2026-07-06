@@ -1,7 +1,7 @@
 ---
 title: "feat: Read-only story map view for the editor"
 type: feat
-status: active
+status: completed
 date: 2026-06-24
 origin: docs/brainstorms/2026-06-22-editor-story-map-requirements.md
 ---
