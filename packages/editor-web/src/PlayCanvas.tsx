@@ -35,10 +35,14 @@ export function PlayCanvas({
   session,
   version,
   startNode,
+  bare = false,
 }: {
   session: EditorSession;
   version: number;
   startNode?: string;
+  /** Drop the panel header when hosted inside chrome that already labels the preview
+   *  (the play overlay / popped-out window). */
+  bare?: boolean;
 }): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<PixiRenderer | null>(null);
@@ -146,11 +150,13 @@ export function PlayCanvas({
   }, [startNode]);
 
   return (
-    <section className="panel play">
-      <h2>
-        Play preview{" "}
-        <span className="muted">· {startNode ? `from ${startNode} · fresh state` : "from start"}</span>
-      </h2>
+    <section className={bare ? "play bare" : "panel play"}>
+      {!bare && (
+        <h2>
+          Play preview{" "}
+          <span className="muted">· {startNode ? `from ${startNode} · fresh state` : "from start"}</span>
+        </h2>
+      )}
       {/* The host div must stay mounted through error states — the Pixi canvas was appended
           to THIS node at mount time, and swapping it out would leave the renderer drawing
           into a detached element after recovery. The error renders as an overlay instead. */}

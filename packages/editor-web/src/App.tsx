@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { Group, Panel, Separator } from "react-resizable-panels";
+import type { Layout, PanelImperativeHandle } from "react-resizable-panels";
 import { EditorSession } from "@ludelier/editor-core";
 import type { EditorSnapshot, AgentEvent, AgentRunResult } from "@ludelier/editor-core";
 import { validateStory } from "@ludelier/schema";
-import type { Issue, Story } from "@ludelier/schema";
+import type { Issue, Story, StoryNode } from "@ludelier/schema";
 import type { TaskManifestEntry } from "@ludelier/world";
 import { openRouterProvider } from "@ludelier/authoring";
-import { PlayCanvas } from "./PlayCanvas";
 import { StoryMap } from "./storymap/StoryMap";
 import { ScriptLens } from "./storymap/ScriptLens";
 import { TaskForm } from "./forms/TaskForm";
+import { PlayOverlay } from "./play/PlayOverlay";
 import { newStoryScaffold, parseStoryJson, serializeStory, storyFileName } from "./story/files";
 import cafeStory from "../../../examples/cafe.story.json";
 
@@ -25,6 +27,30 @@ function makeInitialSession(): EditorSession {
   const v = validateStory(cafeStory);
   if (!v.success) throw new Error(`example story invalid: ${JSON.stringify(v.issues)}`);
   return new EditorSession(v.data);
+}
+
+/** Which inspector tab is showing: the selected node's script, the global edit forms,
+ *  graph health, or the edit history. */
+type InspectorTab = "node" | "edit" | "health" | "history";
+
+/** localStorage slot for the resizable column layout, so panel sizes survive reloads. */
+const LAYOUT_STORE = "ludelier.editor.layout";
+
+function loadLayout(): Layout | undefined {
+  try {
+    const raw = localStorage.getItem(LAYOUT_STORE);
+    return raw ? (JSON.parse(raw) as Layout) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveLayout(layout: Layout): void {
+  try {
+    localStorage.setItem(LAYOUT_STORE, JSON.stringify(layout));
+  } catch {
+    /* private-mode / quota — a non-persisted layout is a fine degradation */
+  }
 }
 
 export function App(): JSX.Element {
@@ -43,6 +69,37 @@ export function App(): JSX.Element {
   const manifest = useMemo(() => session.describe(), [session]);
   const [selected, setSelected] = useState<string | null>(null);
   const selectedNode = snap.story.nodes.find((n) => n.id === selected) ?? null;
+
+  // Which inspector tab is showing. Selecting a node jumps to "node" (below) so a click on
+  // the graph immediately reveals that node's script.
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("node");
+  const [playOpen, setPlayOpen] = useState(false);
+
+  // Collapsible side docks (react-resizable-panels imperative handles). The panels stay
+  // MOUNTED when collapsed — collapse is size→0, not unmount — so ChatPanel keeps its BYOK
+  // key / in-flight run and the inspector keeps its state.
+  const chatRef = useRef<PanelImperativeHandle>(null);
+  const inspectorRef = useRef<PanelImperativeHandle>(null);
+  const [chatOpen, setChatOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  // Read the persisted column layout once (localStorage) — a stable value so re-renders
+  // don't hand the panel group a new object mid-session.
+  const [initialLayout] = useState(loadLayout);
+
+  function toggleDock(ref: React.RefObject<PanelImperativeHandle | null>): void {
+    const p = ref.current;
+    if (!p) return;
+    if (p.isCollapsed()) p.expand();
+    else p.collapse();
+  }
+
+  /** Select a node from the graph: reveal its script in the inspector (expanding the dock
+   *  if the author had collapsed it) so a click always shows what was clicked. */
+  function selectNode(id: string): void {
+    setSelected(id);
+    setInspectorTab("node");
+    inspectorRef.current?.expand();
+  }
 
   // A selected node can vanish when the agent deletes it — drop the stale selection so the
   // lens, preview, and map agree (and a later node reusing the id isn't silently re-selected).
@@ -64,35 +121,108 @@ export function App(): JSX.Element {
 
   return (
     <div className="app">
-      <Toolbar session={session} snap={snap} onOpenSession={openSession} />
-      <div className="cols">
-        <ChatPanel session={session} />
-        <div className="center">
-          {/* Keyed by the swap counter (namespaced — same-key siblings would collide and
-              duplicate): a swapped-in session must remount the renderer and must not inherit
-              form state or error text that referred to the previous story (ChatPanel is
-              deliberately not keyed — the BYOK key/model/prompt are session-independent). */}
-          <PlayCanvas
-            key={`play-${key}`}
-            session={session}
-            version={version}
-            startNode={selected ?? undefined}
-          />
-          {/* Keyed too: React Flow's fitView only fires on init, so without a remount an
-              Open/New would keep the previous story's pan/zoom over a different graph.
-              Within a session, edits deliberately do NOT refit — the viewport holds, and
-              the Controls' fit-view button re-frames on demand. */}
-          <StoryMap key={`map-${key}`} snap={snap} selected={selected} onSelect={setSelected} />
-          <ScriptLens key={`lens-${key}`} node={selectedNode} session={session} manifest={manifest} />
-        </div>
-        <SidePanel
-          key={`side-${key}`}
-          session={session}
-          snap={snap}
-          manifest={manifest}
-          onOpenSession={openSession}
-        />
+      <Toolbar session={session} snap={snap} onOpenSession={openSession} onPlay={() => setPlayOpen(true)} />
+      <div className="workspace">
+        <nav className="rail" aria-label="Panels">
+          <button
+            type="button"
+            className={`rail-btn ${chatOpen ? "active" : ""}`}
+            onClick={() => toggleDock(chatRef)}
+            title="Toggle agent chat"
+            aria-pressed={chatOpen}
+          >
+            💬
+          </button>
+          <button
+            type="button"
+            className={`rail-btn ${inspectorOpen ? "active" : ""}`}
+            onClick={() => toggleDock(inspectorRef)}
+            title="Toggle inspector"
+            aria-pressed={inspectorOpen}
+          >
+            ☰
+          </button>
+          <div className="rail-spacer" />
+          <button
+            type="button"
+            className="rail-btn play"
+            onClick={() => setPlayOpen(true)}
+            title="Play preview"
+          >
+            ▶
+          </button>
+        </nav>
+
+        <Group
+          orientation="horizontal"
+          id="editor"
+          className="panels"
+          defaultLayout={initialLayout}
+          onLayoutChanged={saveLayout}
+        >
+          <Panel
+            id="chat"
+            panelRef={chatRef}
+            collapsible
+            collapsedSize={0}
+            minSize="16%"
+            defaultSize="24%"
+            onResize={(size) => setChatOpen(size.asPercentage > 0)}
+          >
+            {/* Deliberately NOT keyed on session swap — the BYOK key/model/prompt are
+                session-independent and should survive Open / New. Collapse is size→0, not
+                unmount, so an in-flight run survives a toggle too. */}
+            <ChatPanel session={session} />
+          </Panel>
+          <Separator className="handle" />
+
+          <Panel id="graph" minSize="30%">
+            {/* Keyed by the swap counter: React Flow's fitView only fires on init, so without
+                a remount an Open/New would keep the previous story's pan/zoom over a different
+                graph. Within a session, edits deliberately do NOT refit — the viewport holds. */}
+            <StoryMap
+              key={`map-${key}`}
+              snap={snap}
+              selected={selected}
+              onSelect={selectNode}
+              onPlay={() => setPlayOpen(true)}
+            />
+          </Panel>
+          <Separator className="handle" />
+
+          <Panel
+            id="inspector"
+            panelRef={inspectorRef}
+            collapsible
+            collapsedSize={0}
+            minSize="18%"
+            defaultSize="26%"
+            onResize={(size) => setInspectorOpen(size.asPercentage > 0)}
+          >
+            {/* Keyed on swap so a new story doesn't inherit form/error state from the old. */}
+            <Inspector
+              key={`inspector-${key}`}
+              session={session}
+              snap={snap}
+              manifest={manifest}
+              selectedNode={selectedNode}
+              tab={inspectorTab}
+              onTab={setInspectorTab}
+              onOpenSession={openSession}
+            />
+          </Panel>
+        </Group>
       </div>
+
+      {playOpen && (
+        <PlayOverlay
+          session={session}
+          version={version}
+          startNode={selected ?? undefined}
+          playKey={key}
+          onClose={() => setPlayOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -118,10 +248,12 @@ function Toolbar({
   session,
   snap,
   onOpenSession,
+  onPlay,
 }: {
   session: EditorSession;
   snap: EditorSnapshot;
   onOpenSession: (next: EditorSession) => void;
+  onPlay: () => void;
 }): JSX.Element {
   const [newId, setNewId] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -212,6 +344,10 @@ function Toolbar({
       />
       <button type="button" onClick={addNode} disabled={!newId.trim()}>
         ＋ Node
+      </button>
+      <span className="toolbar-sep" />
+      <button type="button" className="play-cta" onClick={onPlay} title="Play the story in an overlay">
+        ▶ Play
       </button>
     </header>
   );
@@ -455,10 +591,10 @@ function EditTasks({
   // Re-key prefilled forms on their prefill so an outside edit (agent, undo) refreshes them.
   const metaKey = `${snap.story.meta.title}·${snap.story.meta.start}·${snap.story.meta.seed}`;
   return (
-    <details className="edit-tasks">
-      <summary>
-        <h2>Edit ({tasks.length} tasks)</h2>
-      </summary>
+    <div className="edit-tasks">
+      <p className="muted tab-hint">
+        Every manipulate task, as a form. Node-scoped statement edits also live inline in the Node tab.
+      </p>
       {tasks.map((t) => (
         <details key={t.name} className="edit-task">
           <summary>
@@ -474,7 +610,7 @@ function EditTasks({
           />
         </details>
       ))}
-    </details>
+    </div>
   );
 }
 
@@ -536,15 +672,109 @@ function RunHistory({ session, snap }: { session: EditorSession; snap: EditorSna
   );
 }
 
-function SidePanel({
+/**
+ * The right-hand inspector. A fixed set of tabs (Node / Edit / Health / History) share one
+ * scroll-isolated body, so selecting a node or a long node's script only swaps the body's
+ * contents — it never reflows the graph or the chat. Selecting a node in the graph jumps to
+ * the Node tab (see `selectNode` in App).
+ */
+function Inspector({
   session,
   snap,
   manifest,
+  selectedNode,
+  tab,
+  onTab,
   onOpenSession,
 }: {
   session: EditorSession;
   snap: EditorSnapshot;
   manifest: TaskManifestEntry[];
+  selectedNode: StoryNode | null;
+  tab: InspectorTab;
+  onTab: (t: InspectorTab) => void;
+  onOpenSession: (next: EditorSession) => void;
+}): JSX.Element {
+  const unhealthy = !snap.valid || snap.graph.unreachable.length > 0 || snap.graph.deadEnds.length > 0;
+  return (
+    <section className="panel inspector">
+      <div className="tabs" role="tablist">
+        <TabButton id="node" tab={tab} onTab={onTab}>
+          Node
+          {selectedNode && <code className="tab-badge">{selectedNode.id}</code>}
+        </TabButton>
+        <TabButton id="edit" tab={tab} onTab={onTab}>
+          Edit
+        </TabButton>
+        <TabButton id="health" tab={tab} onTab={onTab}>
+          Health
+          {unhealthy && <span className="tab-dot bad" aria-hidden />}
+        </TabButton>
+        <TabButton id="history" tab={tab} onTab={onTab}>
+          History
+          {snap.records.length > 0 && <span className="tab-count">{snap.records.length}</span>}
+        </TabButton>
+      </div>
+      <div className="tab-body">
+        {tab === "node" && <ScriptLens node={selectedNode} session={session} manifest={manifest} />}
+        {tab === "edit" && <EditTasks session={session} snap={snap} manifest={manifest} />}
+        {tab === "health" && <HealthPanel snap={snap} />}
+        {tab === "history" && <HistoryPanel session={session} snap={snap} onOpenSession={onOpenSession} />}
+      </div>
+    </section>
+  );
+}
+
+function TabButton({
+  id,
+  tab,
+  onTab,
+  children,
+}: {
+  id: InspectorTab;
+  tab: InspectorTab;
+  onTab: (t: InspectorTab) => void;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={tab === id}
+      className={`tab ${tab === id ? "active" : ""}`}
+      onClick={() => onTab(id)}
+    >
+      {children}
+    </button>
+  );
+}
+
+function HealthPanel({ snap }: { snap: EditorSnapshot }): JSX.Element {
+  return (
+    <dl className="health">
+      <dt>valid</dt>
+      <dd className={snap.valid ? "ok" : "bad"}>{String(snap.valid)}</dd>
+      <dt>reachable</dt>
+      <dd>{snap.graph.reachable.length}</dd>
+      <dt>unreachable</dt>
+      <dd className={snap.graph.unreachable.length ? "bad" : "ok"}>
+        {snap.graph.unreachable.join(", ") || "none"}
+      </dd>
+      <dt>dead ends</dt>
+      <dd className={snap.graph.deadEnds.length ? "bad" : "ok"}>
+        {snap.graph.deadEnds.join(", ") || "none"}
+      </dd>
+    </dl>
+  );
+}
+
+function HistoryPanel({
+  session,
+  snap,
+  onOpenSession,
+}: {
+  session: EditorSession;
+  snap: EditorSnapshot;
   onOpenSession: (next: EditorSession) => void;
 }): JSX.Element {
   const [logErr, setLogErr] = useState<string | null>(null);
@@ -563,26 +793,7 @@ function SidePanel({
   }
 
   return (
-    <section className="panel side">
-      <h2>Graph health</h2>
-      <dl className="health">
-        <dt>valid</dt>
-        <dd className={snap.valid ? "ok" : "bad"}>{String(snap.valid)}</dd>
-        <dt>reachable</dt>
-        <dd>{snap.graph.reachable.length}</dd>
-        <dt>unreachable</dt>
-        <dd className={snap.graph.unreachable.length ? "bad" : "ok"}>
-          {snap.graph.unreachable.join(", ") || "none"}
-        </dd>
-        <dt>dead ends</dt>
-        <dd className={snap.graph.deadEnds.length ? "bad" : "ok"}>
-          {snap.graph.deadEnds.join(", ") || "none"}
-        </dd>
-      </dl>
-
-      <EditTasks session={session} snap={snap} manifest={manifest} />
-
-      <h2>History</h2>
+    <>
       {snap.records.length === 0 ? (
         <p className="muted">No edits yet.</p>
       ) : (
@@ -622,6 +833,6 @@ function SidePanel({
       <p className="muted hint">
         Import replays a log onto the current base story — open the matching .story.json first.
       </p>
-    </section>
+    </>
   );
 }

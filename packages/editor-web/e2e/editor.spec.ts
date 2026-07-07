@@ -50,7 +50,7 @@ test("toolbar create-node adds a flagged node to the map and undo removes it", a
 
 test("a manifest-driven set-meta form edit updates the toolbar title", async ({ page }) => {
   await openEditor(page);
-  await page.locator("details.edit-tasks > summary").click();
+  await page.getByRole("tab", { name: "Edit" }).click(); // edit forms now live in the inspector's Edit tab
   const task = page.locator("details.edit-task").filter({ has: page.getByText("set-meta", { exact: true }) });
   await task.locator("summary").click();
   const title = task.getByLabel("title");
@@ -62,6 +62,8 @@ test("a manifest-driven set-meta form edit updates the toolbar title", async ({ 
 
 test("the play preview canvas mounts and is drawing", async ({ page }) => {
   await openEditor(page);
+  // The preview is now on-demand: open the overlay from the story-map's Play CTA.
+  await page.getByRole("button", { name: "Play from start" }).click();
   const stage = page.locator('canvas[data-testid="stage"]');
   // Pixi init + asset preload happen after first render — give the cold path headroom.
   await expect(stage).toBeVisible({ timeout: 15_000 });

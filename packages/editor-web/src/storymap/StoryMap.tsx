@@ -19,21 +19,29 @@ export function StoryMap({
   snap,
   selected,
   onSelect,
+  onPlay,
 }: {
   snap: EditorSnapshot;
   selected: string | null;
   onSelect: (id: string) => void;
+  /** Open the play preview from the current start / selected node. */
+  onPlay: () => void;
 }): JSX.Element {
   const { nodes, edges } = useMemo(() => buildStoryGraph(snap, selected), [snap, selected]);
 
   return (
     <section className="panel map">
-      <h2>
-        Story map{" "}
-        <span className="muted">
-          · {snap.story.meta.title} · {nodes.length} nodes · read-only
-        </span>
-      </h2>
+      <div className="map-head">
+        <h2>
+          Story map{" "}
+          <span className="muted">
+            · {snap.story.meta.title} · {nodes.length} nodes · read-only
+          </span>
+        </h2>
+        <button type="button" className="play-cta" onClick={onPlay} title="Play preview in an overlay">
+          ▶ Play {selected ? `from ${selected}` : "from start"}
+        </button>
+      </div>
       <div className="storymap">
         <ReactFlow
           nodes={nodes}

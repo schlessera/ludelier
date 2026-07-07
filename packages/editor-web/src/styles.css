@@ -92,76 +92,109 @@ textarea {
   resize: vertical;
 }
 
-.cols {
-  display: grid;
-  grid-template-columns: 1.1fr 1.2fr 0.9fr;
-  grid-template-areas: "chat center side";
-  gap: 1px;
-  background: var(--line);
+/* Workspace: a fixed activity rail + a resizable three-panel group that fills the viewport.
+   The graph panel is the star; chat (left) and inspector (right) are collapsible docks. */
+.workspace {
   flex: 1;
+  display: flex;
   min-height: 0;
 }
 
-.chat {
-  grid-area: chat;
+.rail {
+  flex: none;
+  width: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
 }
 
-.center {
-  grid-area: center;
+.rail-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--muted);
 }
 
-.side {
-  grid-area: side;
+.rail-btn:hover:not(:disabled) {
+  border-color: var(--line);
+  color: var(--fg);
 }
 
-/* Mid width: the center column (map + preview) goes full-width on top; chat and the
-   side panel share a row below. The app scrolls as a page instead of pinning to 100vh. */
-@media (max-width: 1280px) {
-  .app {
-    height: auto;
-    min-height: 100vh;
-  }
-
-  .cols {
-    grid-template-columns: 1fr 1fr;
-    grid-template-areas:
-      "center center"
-      "chat side";
-  }
-
-  .panel,
-  .center {
-    overflow: visible;
-  }
+.rail-btn.active {
+  color: var(--accent);
+  background: #1a2330;
+  border-color: #24344a;
 }
 
-/* Narrow: a single scrolling column — center first (the thing being made), then chat, then side. */
-@media (max-width: 820px) {
-  .cols {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "center"
-      "chat"
-      "side";
-  }
+.rail-spacer {
+  flex: 1;
+}
 
-  .toolbar {
-    flex-wrap: wrap;
-  }
+.rail-btn.play {
+  color: var(--ok);
+  font-size: 14px;
+}
+
+.rail-btn.play:hover:not(:disabled) {
+  border-color: var(--ok);
+  background: #142a1c;
+}
+
+/* The resizable panel group fills the row to the right of the rail. */
+.panels {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Force each panel's content (our .panel sections) to fill the panel box — height comes
+   from the flex row's default stretch; width from flex:1 inside the panel wrapper. */
+.panels [data-panel] {
+  min-width: 0;
+  display: flex;
+}
+
+.panels [data-panel] > * {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Drag handle between panels: a hairline with a comfortable invisible hit area. */
+.handle {
+  width: 1px;
+  background: var(--line);
+  position: relative;
+}
+
+.handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 -4px;
+}
+
+.handle:hover,
+.handle:active,
+.handle[data-active],
+.handle[aria-valuenow]:focus-visible {
+  background: var(--accent);
 }
 
 .panel {
   background: var(--bg);
   padding: 14px 16px;
   overflow: auto;
-}
-
-.center {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  background: var(--line);
-  overflow: auto;
+  height: 100%;
 }
 
 /* The host stays mounted through error states (the Pixi canvas lives inside it);
@@ -449,16 +482,41 @@ button.small {
   margin: 0;
 }
 
-/* Story map (read-only flow diagram) */
-.map {
+/* Story map (read-only flow diagram) — the primary canvas, fills its panel. */
+.panel.map {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  overflow: hidden;
+  padding: 12px 14px 14px;
+}
+
+.map-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.map-head h2 {
+  flex: 1;
+  margin: 4px 0 8px;
+}
+
+.play-cta {
+  border-color: #234b32;
+  color: var(--ok);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.play-cta:hover:not(:disabled) {
+  border-color: var(--ok);
+  background: #142a1c;
 }
 
 .storymap {
   flex: 1;
-  min-height: 340px;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #0d1117;
@@ -694,4 +752,142 @@ button.mini {
 
 .lens .stmt-id {
   font-size: 10px;
+}
+
+/* Right inspector: tab bar over one scroll-isolated body (kills the old layout shift). */
+.panel.inspector {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 8px 8px 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 7px 7px 0 0;
+}
+
+.tab:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+.tab.active {
+  color: var(--fg);
+  background: var(--bg);
+  border-color: var(--line);
+  margin-bottom: -1px;
+  padding-bottom: 7px;
+}
+
+.tab-badge {
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #1c2330;
+  color: var(--accent);
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-count {
+  font-size: 10px;
+  min-width: 16px;
+  padding: 0 4px;
+  text-align: center;
+  border-radius: 999px;
+  background: var(--line);
+  color: var(--muted);
+}
+
+.tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bad);
+}
+
+.tab-body {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 16px;
+}
+
+.tab-hint {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+}
+
+/* Play preview: on-demand modal overlay, or popped out into a separate window. */
+.play-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(6, 9, 14, 0.66);
+  backdrop-filter: blur(2px);
+}
+
+.play-modal {
+  width: min(940px, 88vw);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 16px 18px 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+
+.play-modal.popped {
+  width: min(460px, 80vw);
+}
+
+.play-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.play-modal-head .spacer {
+  flex: 1;
+}
+
+.popout-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.play.bare {
+  display: block;
+}
+
+/* The content rendered into the popped-out window. */
+.popout-play {
+  min-height: 100vh;
+  padding: 16px;
+  background: #0e1117;
 }
