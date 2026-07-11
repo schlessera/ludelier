@@ -1,5 +1,55 @@
 # @ludelier/editor-web
 
+## 0.3.0
+
+### Minor Changes
+
+- b36430e: Redesign the editor shell around the story graph. The old fixed three-column grid is
+  replaced by a graph-centric layout: a large central React Flow canvas flanked by a
+  collapsible agent-chat dock (left) and a tabbed inspector (right), with drag-to-resize
+  splitters whose sizes persist across reloads (`react-resizable-panels`). A slim activity
+  rail toggles either side dock.
+
+  The inspector consolidates the former center-stacked script lens and side panel into one
+  scroll-isolated body with **Node / Edit / Health / History** tabs — selecting a graph node
+  jumps to the Node tab (and expands the dock if collapsed). Because the inspector scrolls
+  internally, selecting a node no longer reflows the graph or the chat: the long-standing
+  "windows jump around when you click a node" behaviour is gone, and the graph gets far more
+  room.
+
+  The Pixi play preview is now on-demand: a Play control opens it as a modal overlay
+  (Escape / backdrop / Close to dismiss) instead of permanently occupying center space, and
+  it can **pop out into a separate window** for multi-monitor use while staying in sync with
+  edits.
+
+- a7a9d91: Add multi-provider AI image and audio generation with model-capability routing, redacted provenance, verified host persistence, and cache recovery. Extend Story media metadata and deterministic audio cues, then expose the same authorized asset workflow through the CLI, MCP, editor panel, and agent chat. Browser playback now uses the shared Howler adapter with image-only Pixi preload, generated-voice disclosure, and save compatibility gating.
+- a7a9d91: Surface bounded all-paths runtime coverage in the editor. `EditorSession.snapshot()` now
+  carries an `explore` report (played-through nodes, whether an ending is reachable, self-gated
+  `stuck` nodes, and `truncated`/`crashed` flags) alongside the static `graph` — computed via the
+  same `explore` task the agent's `done` gate verifies against, so the human editor has parity
+  with what the agent sees.
+
+  The editor **Health** tab renders it beside the static wiring, including the actionable
+  static-vs-runtime divergence (nodes statically wired but never played, warning-grade) and folds
+  the blocking runtime signals (no ending reachable, stuck, crashed) into the Health-tab warning
+  dot. `HealthPanel` is extracted to a pure, prop-driven component.
+
+  Also adds a jsdom + React Testing Library component-test harness for the editor, covering
+  `HealthPanel`, the manifest-driven `TaskForm`, and the `ScriptLens`.
+
+### Patch Changes
+
+- Updated dependencies [a7a9d91]
+- Updated dependencies [a7a9d91]
+  - @ludelier/assets@0.2.0
+  - @ludelier/audio-web@0.3.0
+  - @ludelier/schema@0.3.0
+  - @ludelier/engine@0.3.0
+  - @ludelier/world@0.3.0
+  - @ludelier/authoring@0.3.0
+  - @ludelier/editor-core@0.3.0
+  - @ludelier/renderer-pixi@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes
