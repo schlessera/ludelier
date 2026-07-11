@@ -1,6 +1,6 @@
 # Ludelier — Project Status & Handoff
 
-_Last updated: 2026-07-10_
+_Last updated: 2026-07-12_
 
 A living snapshot of where the project stands: decisions, what's built, what's open, and the roadmap. For day-to-day conventions and the golden rules, see [AGENTS.md](./AGENTS.md). This file is the "where are we" overview.
 
@@ -29,7 +29,7 @@ A living snapshot of where the project stands: decisions, what's built, what's o
 | Build / PWA | **Vite** + **vite-plugin-pwa** (Workbox) + **Dexie** (IndexedDB) saves → Dexie Cloud addon = drop-in cloud-sync upsell |
 | Audio | **Howler.js** browser presentation adapters — deterministic engine cue state, generated-voice disclosure, and no renderer/engine dependency |
 | Assets (v1) | **Multi-provider** model-targeted `AssetProvider` — OpenAI image/TTS + OpenRouter images, BYOK per provider, validated capability routing, private redacted provenance (`promptHash`, never plaintext prompts/secrets/raw responses), and verified hash cache. fal.ai / ElevenLabs are later adapters |
-| AI authoring (P2) | **Multi-provider `LLMProvider`** (OpenAI + OpenRouter, shared OpenAI-compatible core, BYOK per provider) + `generateStory()` self-correction loop; evolving into a **world API** (understand + manipulate tasks over the Story) exposed as LLM tools for the editor's agentic chat |
+| AI authoring (P2) | **Multi-provider `LLMProvider`** (OpenAI + OpenRouter, shared OpenAI-compatible core, BYOK per provider) + `generateStory()` self-correction loop; the completed **world API** (understand + manipulate tasks over the Story) powers LLM tools for the editor's agentic chat |
 | App shape | **Agent-native editor**: game-engine-style editor + built-in agentic chat; world API drives both the chat and the UI (parity). Play mode = the runtime-web PWA player |
 | Versioning | **changesets**, independent per-package, **version-PR only (no npm publish yet)** |
 | License | **MIT** open-core + `/ee` (commercial) for cloud features |
@@ -137,11 +137,11 @@ just changeset / just version
 
 ---
 
-## 7. Verification status (full P3 CI re-run 2026-07-10)
+## 7. Verification status (full CI re-run 2026-07-12)
 
 - `pnpm typecheck` — clean (tsc strict).
-- `pnpm lint` — clean (Biome, lint + format; configuration emits its existing deprecation notice).
-- `pnpm test` — **430/430** unit/component tests pass across **48** files, including provider, persistence, replay, agent/MCP, editor, and audio regression coverage.
+- `pnpm lint` — clean (Biome lint + format); configuration uses the current `preset: "recommended"` syntax.
+- `pnpm test` — **432/432** unit/component tests pass across **48** files, including provider, persistence, replay, agent/MCP, editor, and audio regression coverage.
 - `pnpm build:web` + `pnpm build:editor` — OK (both gate CI).
 - `just e2e` — **20/20** Playwright tests pass across runtime and editor projects.
 - **Manual BYOK smoke** — passed in isolated temporary roots: one OpenAI opaque image, one OpenAI TTS response, and one configured OpenRouter image target; all persisted assets were redacted-inventory `valid` and the resulting Story validated.
@@ -156,7 +156,7 @@ just changeset / just version
 | **P1** render + play | ✅ done | PixiJS renderer, Vite/PWA shell, Dexie saves, Playwright, **backgrounds + character sprites** (scene/show/hide + crossfades) |
 | **P2** AI authoring + world API | ✅ done | multi-provider LLM adapter (OpenAI + OpenRouter) + self-correction loop; understand/manipulate world API + registry + agent loop + CLI + **MCP**; React editor + **agentic chat**; manifest-driven edit forms; graph-centric layout; static **+ runtime** health surfacing; unit + component + e2e tests |
 | **P3** AI assets | ✅ done | OpenAI image/TTS + OpenRouter images, model-targeted capability routing, redacted provenance + verified cache/persistence, CLI/MCP/editor/agent generation parity, deterministic audio + Howler presentation; live BYOK smoke passed |
-| **P4** cloud seam | ⬜ | self-host BYOK config ↔ metered cloud per-tenant keys (gateway tool not yet chosen) |
+| **P4** cloud seam | ▶ planned | self-host BYOK config ↔ metered cloud per-tenant keys; first slice is an EE-owned credential broker over existing provider seams, with LiteLLM deferred as an optional EE-only adapter — [architecture plan](docs/plans/2026-07-12-001-feat-p4-cloud-seam-architecture-plan.md) |
 
 ---
 
@@ -166,22 +166,21 @@ just changeset / just version
 - **P3 — COMPLETE (2026-07-10).** Multi-provider image/TTS generation, private redacted provenance, controlled host persistence/recovery, authorized CLI/MCP/editor/agent workflows, deterministic audio presentation, and the documented manual BYOK smoke all passed; the detailed execution record is `docs/plans/2026-07-10-001-p3-ai-assets-plan.md`.
 - **Presentation debt** (from the 2026-07-03 review, tracked in `docs/plans/2026-07-03-001-repo-review-implementation.md` "not in scope") — still open: live viewport resize (beyond DPI), save slots / backlog / text-speed UI. (Renderer unit tests, DPI, keyboard + ARIA floor, error boundary, remember-key landed 2026-07-03; **responsive layout + map-viewport persistence landed 2026-07-04**, superseded by the **graph-centric layout 2026-07-07**.)
 - **Transitions** are a renderer-side crossfade only (instant data model; hash-neutral). Future polish: per-statement transition hints, named/custom sprite positions, sprite layering effects.
-- **Version Packages PR merged (`9f20dd0`) — all 9 packages now at `0.2.0`.** The 2026-07-03/07 review + this P2-close work will roll into the next Version PR (needs a changeset; see §5).
+- **Version Packages PR #18 merged (`b85c622`, 2026-07-11).** It consumed the P2/P3 changesets: `@ludelier/assets` and `@ludelier/assets-node` are `0.2.0`, `@ludelier/renderer-pixi` is `0.2.1`, and the remaining nine packages are `0.3.0`. New code changes need a new changeset and Version PR.
 - Switch changelog generator to `@changesets/changelog-github` once ready.
 - Live-provider smoke test in CI (needs a secrets story); transcript/`raw` redaction before persisting provenance; coverage reporting; Playwright browser caching in CI.
-- Move working directory `gaimez` → `ludelier` (deferred; user does between sessions).
 
 ---
 
 ## 10. Open questions / deferred decisions
 
-- **P4 AI gateway tool** — NOT chosen. LiteLLM is a research candidate but explicitly deferred. Concept is locked (self-host BYOK config ↔ cloud metered per-tenant keys → usage billing; metering boundary = per-tenant key; monetize workflow + hosting, never the copyable artifact). Decide later.
+- **P4 gateway strategy — RESOLVED (2026-07-12):** the first hosted slice is an EE-owned credential broker that remains the tenant authorization and authoritative metering boundary while it composes the existing provider seams directly. LiteLLM is not adopted in the first slice; it may later be an EE-only adapter after the broker's idempotent reconciliation contract is proven. See `docs/plans/2026-07-12-001-feat-p4-cloud-seam-architecture-plan.md`.
 - **Asset providers beyond OpenRouter** — fal.ai (FLUX/LoRA) + ElevenLabs (voice/SFX) are planned later adapters; no delivery phase is committed.
 - **Transparent sprites — RESOLVED:** resolution is model-targeted, not provider-wide. A transparent request succeeds only when its selected configured target explicitly advertises compatible alpha/background and output-format support; no opaque/deprecated fallback is implicit.
 - **Editor app shell — RESOLVED (2026-06-22): React.** The editor chrome (panels/inspectors + chat) around the Pixi canvas uses React (largest ecosystem + most AI-codegen training data, aligning with the agent-grows-the-app goal) in a new `@ludelier/editor-web` (Vite + React) package binding to `@ludelier/editor-core`. The runtime-web player stays the embedded play mode.
-- **Agent tool-calling** — extend `LLMProvider` with function/tool-calling (OpenAI-compatible `tools`/`tool_calls`) so the agentic chat invokes world-API tasks; define the tool schemas + the agent loop (where it runs — client-side BYOK first).
+- **Agent tool-calling — RESOLVED:** `LLMProvider` exposes OpenAI-compatible tool-calling and the agentic chat invokes registry-derived world tasks; paid host tools remain explicitly injected and authorized.
 - ~~**World-API home**~~ — RESOLVED: split into `@ludelier/world` (task registry + EditLog) and `@ludelier/editor-core` (the `EditorSession` façade); `authoring` keeps only the LLM provider + agent loop.
-- **Default model slugs** — `providersFromEnv()` defaults (`gpt-5-mini`, `openai/gpt-5-mini`) are unverified placeholders; confirm current slugs at the live smoke test.
+- **Default model slugs — VERIFIED FOR OPENROUTER:** the live P2 smoke exercised `openai/gpt-5-mini`; confirm provider availability again before changing defaults.
 - **Author-facing DSL** — a simpler Ren'Py-like surface that compiles down to the canonical JSON; design later.
 - **Character/style consistency** strategy for AI art (per-character LoRA vs. model-native multi-subject like Nano Banana Pro) — deferred for a future content/asset iteration.
 
@@ -199,7 +198,7 @@ just changeset / just version
 ## 12. Git & release state
 
 - Repo on `github.com/schlessera/ludelier`; `main` tracks `origin/main` (pushed). Identity: Alain Schlesser.
-- History (oldest → newest) below ends at the P1 e2e work; **HEAD is well ahead** (`origin/main` @ `22023c1`, pushed) and additionally includes: the STATUS doc, **P1 backgrounds + sprites** (scene/show/hide + crossfades + committed café art), the **`image-generation`** agent skill + OpenRouter caveat, the **multi-provider `AssetProvider`** plan, **P2 `@ludelier/authoring`** (LLM provider seam + self-correction loop), and the **agent-native editor** vision docs:
+- The milestone list below intentionally ends at the early P1 e2e work. Current `origin/main` is `b85c622` after Version PR #18 consumed the completed P2/P3 changesets.
 
 ```
 361783e chore: bootstrap pnpm + TypeScript monorepo
@@ -219,7 +218,7 @@ bcafd0e chore: add justfile task runner; document as canonical entrypoint in AGE
 73938ea test(e2e): cover advance + choice via real canvas clicks
 ```
 
-- All 9 packages now at `0.2.0` (pre-release, `private: true`) — the Version PR was merged (`9f20dd0 chore(release): version packages to 0.2.0`). Pending changesets since accumulate for the next round.
+- Version state after PR #18: `@ludelier/assets` and `@ludelier/assets-node` are `0.2.0`, `@ludelier/renderer-pixi` is `0.2.1`, and the remaining nine private packages are `0.3.0`. Future code changes accumulate through new changesets and the next Version PR.
 
 ---
 

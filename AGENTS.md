@@ -51,6 +51,12 @@ packages/
             OpenRouter, with tool-calling) + `generateStory()` self-correction loop +
             the agent loop (worldTools/dispatch tool adapter + autonomous `runAgent`,
             graph-health self-correction gate, injectable edit `log`).
+  assets/   @ludelier/assets — P3 portable provider/model-target resolution, redacted
+            provenance, canonical request hashes, and injected OpenAI/OpenRouter adapters.
+  assets-node/ @ludelier/assets-node — Node-only asset processing, controlled persistence,
+            verified cache/recovery, and private sidecar writes.
+  audio-web/ @ludelier/audio-web — browser-only Howler presentation adapter for deterministic
+            engine audio cues.
   editor-core/ @ludelier/editor-core — the editor's headless session façade (pure; no DOM).
             `EditorSession`: owns the Story as an EditLog, `query` (understand) + `edit`
             (manipulate) + undo/redo/revertRun + `change` events + exportLog/fromLog, and an
@@ -112,7 +118,7 @@ The delivered app is a **game-engine-style editor with a built-in agentic chat**
 - These tasks are exposed both as a programmatic **world API** and as **LLM tools** the agentic chat calls (provider tool-calling). `generateStory()` is the coarse "scaffold a whole game" task; finer tasks do incremental edits.
 - **Agent-native parity:** every action a human can take in the editor UI, the agent can take through the same tasks — no human-only escape hatches.
 
-P2 builds this world API on `@ludelier/authoring`; the editor UI (the runtime-web player evolving toward an editor) wires it to the chat panel + inspectors.
+P2 built this world API on `@ludelier/authoring`; the editor UI wires it to the chat panel and inspectors. P3 added the authorized multi-provider asset and audio workflow over the same host boundaries.
 
 ## Agent skills
 
@@ -129,10 +135,10 @@ Reusable, checked-in instructions for agents working in this repo live under `.a
 ## Phase roadmap
 
 - **P0 — DONE:** headless deterministic core + Zod DSL + CLI harness + Vitest.
-- **P1 — DONE:** PixiJS v8 renderer + Vite + vite-plugin-pwa shell + Dexie saves + Playwright visual tests (`--use-gl=swiftshader`, `data-ready` flag); `cafe.story.json` plays in a browser with backgrounds + sprites. (Howler audio deferred to P3 — no audio assets yet.)
+- **P1 — DONE:** PixiJS v8 renderer + Vite + vite-plugin-pwa shell + Dexie saves + Playwright visual tests (`--use-gl=swiftshader`, `data-ready` flag); `cafe.story.json` plays in a browser with backgrounds, sprites, and P3 Howler audio.
 - **P2 — DONE:** AI authoring + the **agent world API** — a multi-provider LLM adapter (OpenAI + OpenRouter) with a self-correction loop generates Zod-valid content, plus understand/manipulate tasks over the Story exposed as agent tools for the editor's agentic chat, as registry-derived CLI subcommands, and as an **MCP server** (`ludelier mcp`). The **agent-native editor** (React shell + graph-centric layout + agentic chat + manifest-driven edit forms) drives it all through the same task registry, with static (`graph`) **and runtime (`explore`) health surfaced** to human and agent alike. Unit + component + e2e tested.
-- **P3 — NEXT (current):** AI asset generation behind a **multi-provider `AssetProvider`** (OpenAI + OpenRouter from v1, BYOK per provider, capability-routed so e.g. a transparent sprite picks a provider that supports it; registry for future fal.ai/ElevenLabs) + provenance pipeline (provider/model/seed sidecars, hash-cache) + Howler audio. Technical plan: `docs/plans/2026-07-10-001-p3-ai-assets-plan.md`.
-- **P4:** cloud seam — self-host BYOK config ↔ metered cloud per-tenant keys (per provider; the per-tenant provider key is the metering boundary). AI-gateway tool choice is deferred (not locked).
+- **P3 — DONE:** multi-provider AI generation — OpenAI image/TTS plus OpenRouter images — behind a capability-routed `AssetProvider` (BYOK per provider), redacted provenance + verified cache/persistence, authorized CLI/MCP/editor/agent generation parity, and deterministic Howler audio. Technical plan: `docs/plans/2026-07-10-001-p3-ai-assets-plan.md`.
+- **P4 — NEXT (current):** cloud seam — self-host BYOK config ↔ metered cloud per-tenant provider keys (the per-tenant provider key is the metering boundary). The first slice is an EE-owned credential broker that composes existing provider seams; LiteLLM is deferred as an optional EE-only adapter. Architecture plan: `docs/plans/2026-07-12-001-feat-p4-cloud-seam-architecture-plan.md`.
 
 ## Locked stack decisions
 
