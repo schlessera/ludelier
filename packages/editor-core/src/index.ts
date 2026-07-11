@@ -10,10 +10,17 @@ import {
   type EditRecord,
   type Result,
   type GraphReport,
+  type ExploreReport,
   type StoryDiff,
 } from "@ludelier/world";
 import { validateStory, type Story, type Issue } from "@ludelier/schema";
-import { runAgent, type AgentRunResult, type AgentEvent, type LLMProvider } from "@ludelier/authoring";
+import {
+  runAgent,
+  type AgentRunResult,
+  type AgentEvent,
+  type AgentTool,
+  type LLMProvider,
+} from "@ludelier/authoring";
 
 export type { AgentEvent, StopReason, AgentRunResult } from "@ludelier/authoring";
 
@@ -36,6 +43,8 @@ export interface ChatOptions {
   onCheckpoint?: (step: number) => boolean | Promise<boolean>;
   signal?: AbortSignal;
   onEvent?: (event: AgentEvent) => void;
+  /** Host-owned extensions (e.g. authorized asset generation); editor-core performs no I/O itself. */
+  tools?: readonly AgentTool[];
 }
 
 /** A read-only view of the session state — what a UI renders and re-renders on `change`. */
@@ -47,6 +56,9 @@ export interface EditorSnapshot {
   canRedo: boolean;
   records: EditRecord[];
   graph: GraphReport;
+  /** Runtime behavioural coverage — which nodes actually play through, whether an ending is
+   *  reachable, and self-gated dead ends. The counterpart to `graph` (static wiring). */
+  explore: ExploreReport;
 }
 
 /** Subscriber notified after any state change (edit / undo / redo / revert / chat). */
@@ -138,6 +150,17 @@ export class EditorSession {
     const res = this.query("graph");
     if (!res.success) throw new Error(`graph task failed: ${JSON.stringify(res.issues)}`);
     return res.data as GraphReport;
+  }
+
+  /**
+   * Convenience: the runtime coverage report (bounded all-paths exploration). Where `graph`
+   * asks "is it wired?", this asks "does it actually play through?" — it runs the reducer,
+   * honouring `if` conditions, and is the same signal the agent's `done` gate verifies against.
+   */
+  explore(): ExploreReport {
+    const res = this.query("explore");
+    if (!res.success) throw new Error(`explore task failed: ${JSON.stringify(res.issues)}`);
+    return res.data as ExploreReport;
   }
 
   /** Convenience: validity of the current story. */
@@ -250,6 +273,7 @@ export class EditorSession {
         temperature: opts.temperature,
         runId: opts.runId,
         system: opts.system,
+        tools: opts.tools,
       });
     } finally {
       this.running = false;
@@ -286,6 +310,7 @@ export class EditorSession {
       canRedo: this.canRedo,
       records: this.records(),
       graph: this.graph(),
+      explore: this.explore(),
     };
   }
 

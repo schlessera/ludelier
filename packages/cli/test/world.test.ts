@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validateStory } from "@ludelier/schema";
 import { createWorld } from "@ludelier/world";
+import { Simulation } from "@ludelier/engine";
 import { run } from "../src/index";
 
 const baseStory = {
@@ -88,6 +89,34 @@ describe("world subcommands", () => {
     // base node a is [say]; append-end made it [say, end]; undo restores [say].
     expect(out.nodes.find((n: { id: string }) => n.id === "a").body).toHaveLength(1);
     expect(readFileSync(logPath, "utf8").trim()).toBe("");
+  });
+});
+
+describe("replay", () => {
+  it("replays a trace recorded from an explicit start node", async () => {
+    const alternateStory = {
+      ...baseStory,
+      meta: { ...baseStory.meta, start: "default", seed: 17 },
+      nodes: [
+        { id: "default", body: [{ op: "say" as const, who: "n", text: "default" }, { op: "end" as const }] },
+        {
+          id: "alternate",
+          body: [{ op: "say" as const, who: "n", text: "alternate" }, { op: "end" as const }],
+        },
+      ],
+    };
+    const parsed = validateStory(alternateStory);
+    if (!parsed.success) throw new Error("fixture must validate");
+    writeFileSync(storyPath, JSON.stringify(alternateStory));
+    const tracePath = join(dir, "alternate.jsonl");
+    writeFileSync(
+      tracePath,
+      new Simulation(parsed.data, { seed: 17, start: "alternate" }).record([{ type: "ADVANCE" }]),
+    );
+    const log = captureLog();
+
+    expect(await run(["replay", storyPath, tracePath, "--seed", "17", "--start", "alternate"])).toBe(0);
+    expect(log.mock.calls.map((call) => call[0]).join("\n")).toContain("OK: replay matched 1 step(s)");
   });
 });
 

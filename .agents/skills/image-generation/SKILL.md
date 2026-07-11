@@ -116,44 +116,33 @@ identify -format "%f %wx%h %m alpha=%A %b\n" bg.webp her.webp
 
 ## Provider abstraction (P3)
 
-P3 generalizes asset generation behind a **multi-provider `AssetProvider`** — **OpenAI + OpenRouter
-from the start**, extensible to fal.ai/ElevenLabs. This skill's OpenAI-direct flow becomes the
-`openai` provider; transparency is a **routing decision**, not a gap.
+P3 generalizes generation behind a portable, **model-targeted** `AssetProvider` seam:
+OpenAI supports image and TTS generation; OpenRouter supports image generation. BYOK remains
+per provider. Hosts resolve a concrete target before vendor I/O, then hand bytes to the
+authorized persistence path.
 
-Each provider declares **capabilities**; a resolver picks one per request (explicit override, else
-the first configured provider that satisfies the request). A transparent sprite routes to a provider
-with `transparentBackground: true` (OpenAI `gpt-image-1.5`); an opaque background can go to OpenRouter
-or OpenAI `gpt-image-2`. BYOK is **per provider** (P4 cloud = metered per-tenant key per provider).
+- A provider's coarse modalities are not enough to route a request. Resolution selects an
+  effective `{ providerId, modelId, parameters }` from explicit overrides or the configured,
+  deterministic target preference order.
+- Each image target declares its supported output formats, background/alpha capability, size
+  policy, and optional quality/seed support. Each audio target declares voices, formats, and
+  input/speed limits.
+- A transparent sprite succeeds **only** when the selected target explicitly advertises a
+  transparent/alpha-compatible output. Never infer that capability from a provider-wide flag,
+  and never silently fall back to an opaque or deprecated model.
+- The direct OpenAI opaque default is `gpt-image-2`; retiring image profiles are not defaults.
+  OpenRouter image targets are discovered from its endpoint metadata and resolved only after
+  their model-level capability data has been validated.
 
-```ts
-interface ProviderCapabilities {
-  image: boolean;
-  transparentBackground: boolean; // openai gpt-image-1.5/1: true; gpt-image-2: false
-  flexibleSizes: boolean;         // arbitrary WxH (gpt-image-2) vs fixed presets
-  maxEdgePx?: number;
-  models: string[];
-}
-interface ImageRequest {
-  prompt: string;
-  kind: "background" | "sprite";  // sprite ⇒ transparent unless overridden
-  size?: string; transparent?: boolean; model?: string; seed?: number;
-  provider?: string;              // optional explicit override
-}
-interface GeneratedAsset {
-  bytes: Uint8Array;
-  provenance: { provider: string; model: string; prompt: string; seed?: number; params: object; cost?: number; hash: string };
-}
-interface AssetProvider {
-  readonly id: string;            // "openai" | "openrouter" | "fal" | …
-  readonly capabilities: ProviderCapabilities;
-  generateImage(req: ImageRequest): Promise<GeneratedAsset>;
-}
-```
+Generation has two distinct records:
 
-**Why OpenAI is needed for transparency (don't rely on OpenRouter alone):** OpenRouter exposes OpenAI
-image gen only as the **GPT-5 Image series** (`openai/gpt-5-image`, `…-mini`, `gpt-5.4-image-2`) — no
-`gpt-image-1.5` by name — and routes via `/api/v1/chat/completions` + `modalities`, not
-`/images/generations`, so there is **no `background:"transparent"`**. OpenRouter's `background_mode`
-(`original`/`transparent`/`solid`) is currently **only on Sourceful V2.5** (`sourceful/riverflow-v2.5-*`).
-So: transparent sprites → the **`openai` provider** (this skill), or a **Sourceful riverflow** route on
-OpenRouter; everything else → either provider. (OpenRouter's catalog evolves — re-verify at implementation.)
+1. Runtime-safe Story metadata contains only the asset id, URL, media kind, and generated flag.
+2. A deployment-private provenance sidecar records a redacted request descriptor, provider/model,
+   `promptHash`, request/content hashes, MIME/extension/size, post-processing recipe, time, and
+   safely reported or labelled estimated cost. It **never** contains plaintext prompts, API keys,
+   authorization headers, raw provider responses, or raw diagnostics.
+
+Use the P3 CLI, MCP, or authorized editor asset host for generated files. Those hosts preflight
+the Story/destination/cache before a paid request, write public media plus private provenance, and
+register Story metadata only after bytes are durable. Browser static deployments prepare a download
+for a human gesture rather than claiming to write the repository.

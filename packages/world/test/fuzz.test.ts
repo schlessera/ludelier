@@ -19,7 +19,7 @@ const world = createWorld();
 const base: Story = {
   meta: { id: "fuzz", title: "Fuzz", start: "a" },
   characters: [{ id: "n", name: "N" }],
-  assets: [{ id: "bg", src: "/bg.png" }],
+  assets: [{ id: "bg", src: "/bg.png", kind: "image", generated: false }],
   nodes: [
     { id: "a", body: [{ op: "say", who: "n", text: "hi" }, { op: "end" }] },
     { id: "b", body: [{ op: "end" }] },

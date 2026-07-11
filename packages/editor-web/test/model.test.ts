@@ -52,6 +52,13 @@ const snap: EditorSnapshot = {
     unreachable: ["orphan"],
     deadEnds: ["sulk"],
   },
+  explore: {
+    reached: ["checkout", "quiet", "recover", "sit", "sulk", "tab", "talk"],
+    endReachable: true,
+    stuck: [],
+    truncated: false,
+    crashed: false,
+  },
 };
 
 describe("buildStoryGraph", () => {

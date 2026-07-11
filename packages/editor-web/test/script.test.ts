@@ -16,6 +16,14 @@ describe("renderStatement", () => {
     expect(renderStatement({ op: "hide", sprite: "anna" })).toBe("hide anna");
   });
 
+  it("renders audio statements readably", () => {
+    expect(renderStatement({ op: "sound", channel: "music", asset: "theme", loop: true })).toBe(
+      "sound music = theme (loop)",
+    );
+    expect(renderStatement({ op: "sound", channel: "sfx", asset: "click" })).toBe("sound sfx = click");
+    expect(renderStatement({ op: "stop-sound", channel: "voice" })).toBe("stop sound voice");
+  });
+
   it("renders state statements readably", () => {
     expect(renderStatement({ op: "set", var: "gold", value: 5 })).toBe("set gold = 5");
     expect(renderStatement({ op: "add", var: "gold", amount: 3 })).toBe("gold += 3");

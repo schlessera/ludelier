@@ -23,6 +23,9 @@ test("plays the café story to the good ending", async ({ page }) => {
   await page.goto("/?new");
   await ready(page);
 
+  await expect(page.getByRole("button", { name: "Unmute audio" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("html")).toHaveAttribute("data-audio-muted", "1");
+
   let h = await handle(page);
   expect(h.pending.kind).toBe("say");
   expect(h.pending.text).toContain("A quiet café");
@@ -51,6 +54,11 @@ test("renders the opening frame", async ({ page }) => {
   await page.waitForFunction(() => !document.documentElement.dataset.anim);
   // Give Pixi one extra frame to flush text glyphs before snapshotting.
   await page.waitForTimeout(200);
+  // Audio presentation is deliberately dormant in browser automation; hide the accessible
+  // control overlay so the visual baseline remains about the rendered story frame.
+  await page.locator('[aria-label="Audio controls"]').evaluate((element) => {
+    element.setAttribute("hidden", "");
+  });
   await expect(page).toHaveScreenshot("opening.png", { maxDiffPixelRatio: 0.03 });
 });
 
@@ -74,6 +82,85 @@ test("advances and chooses via the keyboard", async ({ page }) => {
 
   // The hidden live region mirrors the pending step for screen readers.
   await expect(page.locator('[aria-live="polite"]')).toContainText("Stay and talk");
+});
+
+test("does not advance the story when audio controls receive keyboard activation", async ({ page }) => {
+  await page.goto("/?new");
+  await ready(page);
+
+  const controls = page.getByRole("group", { name: "Audio controls" });
+  const mute = controls.getByRole("button", { name: "Unmute audio" });
+  await mute.focus();
+  await page.keyboard.press("Enter");
+  await expect(controls.getByRole("button", { name: "Mute audio" })).toHaveAttribute("aria-pressed", "false");
+  expect((await handle(page)).pending.kind).toBe("say");
+
+  await controls.getByRole("slider", { name: "Audio volume" }).focus();
+  await page.keyboard.press(" ");
+  expect((await handle(page)).pending.kind).toBe("say");
+});
+
+test("discloses generated voice only and clears it after natural end and stop", async ({ page }) => {
+  await page.goto("/?new&fixture=generated-voice");
+  await ready(page);
+
+  const controls = page.getByRole("group", { name: "Audio controls" });
+  const disclosure = controls.locator('[role="status"]');
+  await expect(disclosure).toBeHidden();
+  await expect(disclosure).toHaveText("");
+
+  // A real control click unlocks playback before the scripted story actions emit voice cues.
+  await controls.getByRole("button", { name: "Unmute audio" }).click();
+  await advance(page);
+  expect((await handle(page)).pending.text).toBe("Ordinary voice.");
+  await expect(disclosure).toBeHidden();
+  await expect(disclosure).toHaveText("");
+
+  await advance(page);
+  expect((await handle(page)).pending.text).toBe("Generated natural voice.");
+  await expect(disclosure).toBeVisible();
+  await expect(disclosure).toHaveText("Generated voice audio is playing.");
+  // Confirm the long valid fixture stays visible before testing the natural end, rather than
+  // racing a sub-frame cue whose onend can happen before the assertion is scheduled.
+  await page.waitForTimeout(250);
+  await expect(disclosure).toBeVisible();
+
+  // The generated cue reaches Howler's natural end; the host must remove the disclosure and a
+  // later render must not revive it from the still-desired reducer audio state.
+  await expect(disclosure).toBeHidden({ timeout: 8_000 });
+  await expect(disclosure).toHaveText("");
+
+  await advance(page);
+  expect((await handle(page)).pending.text).toBe("Generated looping voice.");
+  await expect(disclosure).toBeVisible();
+  await advance(page);
+  expect((await handle(page)).pending.text).toBe("Voice stopped.");
+  await expect(disclosure).toBeHidden();
+  await expect(disclosure).toHaveText("");
+});
+
+test("keeps activated audio alive through a BFCache pagehide", async ({ page }) => {
+  await page.goto("/?new&fixture=generated-voice");
+  await ready(page);
+
+  const controls = page.getByRole("group", { name: "Audio controls" });
+  const disclosure = controls.locator('[role="status"]');
+  await controls.getByRole("button", { name: "Unmute audio" }).click();
+  await advance(page);
+  expect((await handle(page)).pending.text).toBe("Ordinary voice.");
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+    window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+  });
+
+  // The adapter survived the BFCache lifecycle, so the later generated looping cue can still
+  // reach the host's disclosure callback.
+  await advance(page);
+  await advance(page);
+  expect((await handle(page)).pending.text).toBe("Generated looping voice.");
+  await expect(disclosure).toBeVisible();
+  await expect(disclosure).toHaveText("Generated voice audio is playing.");
 });
 
 test("advances and chooses via real canvas clicks", async ({ page }) => {

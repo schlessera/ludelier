@@ -25,7 +25,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,json,svg,png,webp,woff2,wasm}"],
+        globPatterns: ["**/*.{js,css,html,json,svg,png,webp,woff2,wasm,mp3,ogg,wav,m4a,aac,opus,flac}"],
         // Game asset bundles exceed Workbox's 2 MiB default precache cap.
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },

@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
+    "@ludelier/audio-web": "workspace:*",
+    "@ludelier/assets": "workspace:*",
     "@ludelier/authoring": "workspace:*",
     "@ludelier/editor-core": "workspace:*",
     "@ludelier/engine": "workspace:*",
@@ -20,9 +22,14 @@
     "pixi.js": "^8.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-resizable-panels": "^4.12.1"
+    "react-resizable-panels": "^4.12.1",
+    "howler": "^2.2.4"
   },
   "devDependencies": {
+    "@types/howler": "^2.2.12",
+    "@ludelier/assets-node": "workspace:*",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/react": "^16.1.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

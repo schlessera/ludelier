@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EditorSession } from "../src/index";
 import type { Story } from "@ludelier/schema";
-import type { LLMProvider, ToolCall } from "@ludelier/authoring";
+import type { AgentTool, LLMProvider, ToolCall } from "@ludelier/authoring";
 
 const base: Story = {
   meta: { id: "t", title: "T", start: "a" },
@@ -110,12 +110,19 @@ describe("EditorSession", () => {
     if (restored.success) expect(restored.data.story).toEqual(s.story);
   });
 
-  it("snapshot reports validity, undo state, and graph health", () => {
+  it("snapshot reports validity, undo state, graph health, and runtime coverage", () => {
     const s = new EditorSession(base);
     const snap = s.snapshot();
     expect(snap.valid).toBe(true);
     expect(snap.canUndo).toBe(false);
     expect(snap.graph.reachable).toContain("a");
+    // Runtime coverage (bounded all-paths explore): 'a' says then ends, so it plays through
+    // to a real ending with nothing stuck/truncated/crashed.
+    expect(snap.explore.reached).toContain("a");
+    expect(snap.explore.endReachable).toBe(true);
+    expect(snap.explore.stuck).toEqual([]);
+    expect(snap.explore.truncated).toBe(false);
+    expect(snap.explore.crashed).toBe(false);
   });
 
   it("runs an agent chat on the session log; edits join history and are revertable", async () => {
@@ -174,5 +181,34 @@ describe("EditorSession", () => {
     expect(undoThrew).toBe(true);
     expect(session.busy).toBe(false); // released after the run
     expect(session.story.nodes.some((n) => n.id === "z")).toBe(false); // the refused edit did nothing
+  });
+  it("forwards a host tool that writes through the session log and remains revertible", async () => {
+    const s = new EditorSession(base);
+    const hostTool: AgentTool = {
+      definition: {
+        name: "host-set-preview-title",
+        description: "Set a generated-preview title.",
+        parameters: { type: "object", properties: {}, additionalProperties: false },
+      },
+      effects: ["story-write"],
+      async handler(context) {
+        const applied = context.log.apply("set-meta", { title: "Preview ready" }, { runId: context.runId });
+        if (!applied.success) return applied;
+        return { success: true, data: { title: applied.data.meta.title } };
+      },
+    };
+
+    const res = await s.chat("prepare a preview", {
+      provider: scriptedTools([[call(hostTool.definition.name, {}, "host")], [call("done", {}, "done")]]),
+      runId: "host-chat",
+      tools: [hostTool],
+    });
+
+    expect(res.completed).toBe(true);
+    expect(res.commands).toHaveLength(1);
+    expect(res.commands[0]?.command).toBe("set-meta");
+    expect(s.story.meta.title).toBe("Preview ready");
+    expect(s.revertRun("host-chat").success).toBe(true);
+    expect(s.story.meta.title).toBe("T");
   });
 });

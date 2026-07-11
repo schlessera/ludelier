@@ -1,4 +1,4 @@
-import type { VarValue, SpritePosition } from "@ludelier/schema";
+import type { VarValue, SpritePosition, SoundChannel } from "@ludelier/schema";
 
 export interface Cursor {
   node: string;
@@ -22,6 +22,37 @@ export interface Stage {
   sprites: StageSprite[];
 }
 
+/** A persistent music or voice request, established by the play event with `startedAtSeq`. */
+export interface DesiredAudio {
+  asset: string;
+  loop: boolean;
+  startedAtSeq: number;
+}
+
+/** A one-shot instruction for a presentation adapter. `seq` orders every emitted instruction. */
+export type AudioEvent =
+  | { type: "play"; seq: number; channel: SoundChannel; asset: string; loop: boolean }
+  | { type: "stop"; seq: number; channel: SoundChannel };
+
+/**
+ * Logical audio output. Music and voice describe desired persistent playback; SFX is intentionally
+ * event-only so repeated cues remain independently observable.
+ */
+export interface AudioState {
+  music: DesiredAudio | null;
+  voice: DesiredAudio | null;
+  events: AudioEvent[];
+  nextEventSeq: number;
+}
+
+/** Empty audio output for a new simulation. */
+export const initialAudioState: AudioState = {
+  music: null,
+  voice: null,
+  events: [],
+  nextEventSeq: 0,
+};
+
 export type Pending =
   | { kind: "say"; who: string; text: string }
   | {
@@ -38,6 +69,8 @@ export interface GameState {
   rng: number;
   /** Persistent visual stage (background + sprites), mutated by scene/show/hide. */
   stage: Stage;
+  /** Persistent desired playback plus transient audio instructions. */
+  audio: AudioState;
   pending: Pending;
   done: boolean;
   /** Ordered log of every line shown — deterministic, useful for transcript assertions. */

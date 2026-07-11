@@ -9,13 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ludelier/audio-web": "workspace:*",
     "@ludelier/engine": "workspace:*",
     "@ludelier/schema": "workspace:*",
     "@ludelier/renderer-pixi": "workspace:*",
     "dexie": "^4.0.8",
-    "pixi.js": "^8.6.0"
+    "pixi.js": "^8.6.0",
+    "howler": "^2.2.4"
   },
   "devDependencies": {
+    "@types/howler": "^2.2.12",
     "vite": "^5.4.11",
     "vite-plugin-pwa": "^0.21.1"
   }

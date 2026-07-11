@@ -11,7 +11,7 @@ Three properties everything rests on:
 ## What works today
 
 - **Play**: `examples/cafe.story.json` runs in the browser as an installable PWA — PixiJS v8 renderer (backgrounds, character sprites, crossfades), Dexie autosave, and a `window.__ludelier` handle so agents can drive the player too.
-- **Edit**: a React editor with a story map (React Flow), script lens, live play preview, manifest-derived edit forms, story open/save, undo/redo over an event-sourced edit log — and a built-in **agentic chat** (BYOK OpenRouter) whose edits join the same undoable history, gated by graph-health self-verification.
+- **Edit**: a React editor built around the story graph (React Flow canvas flanked by a collapsible agent-chat dock and a tabbed inspector) — script lens, on-demand play preview (pops out for multi-monitor use), manifest-derived edit forms, story open/save, undo/redo over an event-sourced edit log, and **static (`graph`) + runtime (`explore`) story-health** surfaced side by side — plus a built-in **agentic chat** (BYOK OpenRouter) whose edits join the same undoable history, gated by the same graph-health self-verification the editor shows.
 - **Automate**: a CLI (`validate | simulate | replay | world … | author run`) and `ludelier mcp <story>` — an MCP stdio server exposing the full world API to Claude Code, Cursor, or any MCP client, with edits persisted atomically back to the story file.
 
 ## Quickstart
@@ -84,8 +84,8 @@ Currently **version-PR only — nothing publishes to npm**. Packages are `"priva
 
 - **P0 ✅** headless deterministic core + Zod DSL + CLI harness
 - **P1 ✅** PixiJS renderer, PWA player, saves, Playwright visual tests
-- **P2 🔨** AI authoring + the agent world API: providers, agent loop, editor + chat, MCP (in progress)
-- **P3** AI asset generation behind a multi-provider `AssetProvider` + provenance pipeline; audio (Howler)
+- **P2 ✅** AI authoring + the agent world API: multi-provider LLM adapter + self-correction, understand/manipulate registry, run-until-done agent loop, React editor + agentic chat, manifest-driven forms, MCP server, static + runtime health
+- **P3 🔜** AI asset generation behind a multi-provider `AssetProvider` (BYOK, capability-routed) + provenance pipeline; audio (Howler) — [technical plan](./docs/plans/2026-07-10-001-p3-ai-assets-plan.md)
 - **P4** cloud seam (BYOK self-host ↔ metered cloud) — gateway choice still open
 
 License: [MIT](./LICENSE) (open core). Cloud-only features will live under `/ee` (commercial).

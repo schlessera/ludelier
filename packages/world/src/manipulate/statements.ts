@@ -25,7 +25,7 @@ export const addStatementTask: Task = {
   name: "add-statement",
   kind: "manipulate",
   description:
-    "Add a statement to a node. Appends at the end, or inserts before `before` (a statement id from get-node). `statement` is a story statement object: an `op` plus that op's fields — e.g. {op:'say',who,text}, {op:'choice',prompt?,options:[{label,goto}]}, {op:'jump',goto}, {op:'branch',cond:{var,cmp,value},goto}, {op:'end'}, {op:'scene',bg}, {op:'show',sprite,asset,at?}, {op:'hide',sprite}, {op:'set',var,value}, {op:'add',var,amount}, {op:'roll',var,min,max}. `branch` is a conditional jump (takes goto when cond holds, else falls through) and may be followed by more statements; a terminal (end/jump) must be the node's last statement. Omit the statement's id.",
+    "Add a statement to a node. Appends at the end, or inserts before `before` (a statement id from get-node). `statement` is a story statement object: an `op` plus that op's fields — e.g. {op:'say',who,text}, {op:'choice',prompt?,options:[{label,goto}]}, {op:'jump',goto}, {op:'branch',cond:{var,cmp,value},goto}, {op:'end'}, {op:'scene',bg}, {op:'show',sprite,asset,at?}, {op:'hide',sprite}, {op:'sound',channel:'music'|'sfx'|'voice',asset,loop?}, {op:'stop-sound',channel:'music'|'sfx'|'voice'}, {op:'set',var,value}, {op:'add',var,amount}, {op:'roll',var,min,max}. `branch` is a conditional jump (takes goto when cond holds, else falls through) and may be followed by more statements; a terminal (end/jump) must be the node's last statement. Omit the statement's id.",
   params: z.object({ nodeId: slugId, before: z.string().min(1).optional(), statement: Statement }),
   apply: (story, params) => {
     const p = params as { nodeId: string; before?: string; statement: StatementT };

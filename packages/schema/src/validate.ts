@@ -1,4 +1,4 @@
-import { StoryObject, type Story } from "./story";
+import { StoryObject, type AssetKind, type Story } from "./story";
 
 export interface Issue {
   path: string;
@@ -26,12 +26,13 @@ function crossRefIssues(story: Story): Issue[] {
     });
   }
 
-  const assetIds = new Set<string>();
+  const assetKinds = new Map<string, AssetKind>();
   for (const asset of story.assets) {
-    if (assetIds.has(asset.id)) {
+    if (assetKinds.has(asset.id)) {
       issues.push({ path: "assets", message: `duplicate asset id: "${asset.id}"` });
+    } else {
+      assetKinds.set(asset.id, asset.kind ?? "image");
     }
-    assetIds.add(asset.id);
   }
 
   // say.who must name a declared character. Previously a world-only check; folded in here
@@ -81,11 +82,38 @@ function crossRefIssues(story: Story): Issue[] {
           }
         });
       }
-      if (stmt.op === "scene" && stmt.bg !== undefined && !assetIds.has(stmt.bg)) {
-        issues.push({ path: at, message: `scene bg references unknown asset "${stmt.bg}"` });
+      if (stmt.op === "scene" && stmt.bg !== undefined) {
+        const kind = assetKinds.get(stmt.bg);
+        if (kind === undefined) {
+          issues.push({ path: at, message: `scene bg references unknown asset "${stmt.bg}"` });
+        } else if (kind !== "image") {
+          issues.push({
+            path: at,
+            message: `scene bg references ${kind} asset "${stmt.bg}"; expected image asset`,
+          });
+        }
       }
-      if (stmt.op === "show" && !assetIds.has(stmt.asset)) {
-        issues.push({ path: at, message: `show references unknown asset "${stmt.asset}"` });
+      if (stmt.op === "show") {
+        const kind = assetKinds.get(stmt.asset);
+        if (kind === undefined) {
+          issues.push({ path: at, message: `show references unknown asset "${stmt.asset}"` });
+        } else if (kind !== "image") {
+          issues.push({
+            path: at,
+            message: `show references ${kind} asset "${stmt.asset}"; expected image asset`,
+          });
+        }
+      }
+      if (stmt.op === "sound") {
+        const kind = assetKinds.get(stmt.asset);
+        if (kind === undefined) {
+          issues.push({ path: at, message: `sound references unknown asset "${stmt.asset}"` });
+        } else if (kind !== "audio") {
+          issues.push({
+            path: at,
+            message: `sound references ${kind} asset "${stmt.asset}"; expected audio asset`,
+          });
+        }
       }
     });
   }

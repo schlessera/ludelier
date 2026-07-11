@@ -1,27 +1,83 @@
 import { useEffect, useRef, useState } from "react";
 import { type Action, Simulation } from "@ludelier/engine";
+import { AudioPlayer, type AudioSource } from "@ludelier/audio-web";
+import { Howl } from "howler";
 import { PixiRenderer, type AssetRef } from "@ludelier/renderer-pixi";
+import type { Asset } from "@ludelier/schema";
 import type { EditorSession } from "@ludelier/editor-core";
 
-// Pixi's Assets registry is a global singleton; track which id → src pairs are already
-// loaded so a rebuild (after an edit) only loads newly-added assets and never re-adds a
-// live alias. Tracking the src too matters since sessions can be swapped (Open/New): an
-// opened story reusing an id for a *different* src must fail loudly (below) rather than
-// silently rendering the previous story's texture.
+// Pixi's Assets registry is a global singleton; track each completed alias and reserve aliases
+// while their preload is in flight. Reserving before awaiting prevents two rebuilds from racing
+// the same id to different URLs and lets an already-current same-URL preload be shared.
 const loadedAssets = new Map<string, string>();
+const pendingAssets = new Map<string, { src: string; settled: Promise<void> }>();
 
-async function ensureAssets(renderer: PixiRenderer, assets: readonly AssetRef[]): Promise<void> {
+/** Pixi only preloads visual media. Audio URLs are resolved by the separate AudioPlayer. */
+export function imageAssets(assets: readonly Asset[]): readonly AssetRef[] {
+  return assets.filter((asset) => asset.kind === "image");
+}
+
+export function resolveAudioSource(assets: readonly Asset[], assetId: string): AudioSource | undefined {
+  const asset = assets.find((candidate) => candidate.id === assetId && candidate.kind === "audio");
+  return asset ? { src: asset.src, generated: asset.generated } : undefined;
+}
+
+export async function ensureAssets(
+  renderer: Pick<PixiRenderer, "preload">,
+  assets: readonly AssetRef[],
+): Promise<void> {
   const fresh: AssetRef[] = [];
-  for (const a of assets) {
-    const src = loadedAssets.get(a.id);
-    if (src === undefined) fresh.push(a);
-    else if (src !== a.src) {
-      throw new Error(`asset "${a.id}" is already loaded from "${src}" — reload the page to load "${a.src}"`);
+  const pending: Promise<void>[] = [];
+  for (const asset of assets) {
+    const loadedSrc = loadedAssets.get(asset.id);
+    if (loadedSrc !== undefined) {
+      if (loadedSrc !== asset.src) {
+        throw new Error(
+          `asset "${asset.id}" is already loaded from "${loadedSrc}" — reload the page to load "${asset.src}"`,
+        );
+      }
+      continue;
+    }
+
+    const loading = pendingAssets.get(asset.id);
+    if (loading) {
+      if (loading.src !== asset.src) {
+        throw new Error(
+          `asset "${asset.id}" is already loading from "${loading.src}" — reload the page to load "${asset.src}"`,
+        );
+      }
+      pending.push(loading.settled);
+      continue;
+    }
+    fresh.push(asset);
+  }
+
+  if (fresh.length > 0) {
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const settled = new Promise<void>((resolveLoad, rejectLoad) => {
+      resolve = resolveLoad;
+      reject = rejectLoad;
+    });
+    // A failed first preload may not have a concurrent waiter; observe that rejection here while
+    // still propagating it through this caller's awaited preload.
+    void settled.catch(() => undefined);
+    for (const asset of fresh) pendingAssets.set(asset.id, { src: asset.src, settled });
+    try {
+      await renderer.preload(fresh);
+      for (const asset of fresh) loadedAssets.set(asset.id, asset.src);
+      resolve();
+    } catch (error) {
+      reject(error);
+      throw error;
+    } finally {
+      for (const asset of fresh) {
+        if (pendingAssets.get(asset.id)?.settled === settled) pendingAssets.delete(asset.id);
+      }
     }
   }
-  if (fresh.length === 0) return;
-  await renderer.preload(fresh);
-  for (const a of fresh) loadedAssets.set(a.id, a.src);
+
+  await Promise.all(pending);
 }
 
 /**
@@ -48,15 +104,29 @@ export function PlayCanvas({
   const rendererRef = useRef<PixiRenderer | null>(null);
   const simRef = useRef<Simulation | null>(null);
   const mountedRef = useRef(false);
+  const playerRef = useRef<AudioPlayer | null>(null);
+  /** Every rebuild claims a generation; an older async preload must never replace newer preview state. */
+  const rebuildGenerationRef = useRef(0);
   /** The preview playthrough's own action history — replayed after an edit so the author
    *  isn't yanked back to the start on every change. Cleared by Restart / play-from-here. */
   const actionsRef = useRef<Action[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [muted, setMuted] = useState(true);
+  const [volume, setVolume] = useState(0.8);
+  const [generatedVoice, setGeneratedVoice] = useState(false);
 
   function draw(): void {
     const sim = simRef.current;
     const renderer = rendererRef.current;
     if (sim && renderer) renderer.render(sim.state);
+  }
+
+  function reconcileAudio(initializing = false): void {
+    const audio = simRef.current?.state.audio;
+    const player = playerRef.current;
+    if (!audio || !player) return;
+    if (initializing) player.initialize(audio);
+    else player.reconcile(audio);
   }
 
   /** Dispatch a play action, surfacing an engine throw (e.g. an infinite loop) as the inline
@@ -65,6 +135,7 @@ export function PlayCanvas({
     try {
       simRef.current?.dispatch(action);
       actionsRef.current.push(action);
+      reconcileAudio();
       draw();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -72,11 +143,14 @@ export function PlayCanvas({
   }
 
   async function rebuild(): Promise<void> {
+    const generation = ++rebuildGenerationRef.current;
     const renderer = rendererRef.current;
     if (!renderer) return;
     try {
       const story = session.story;
-      await ensureAssets(renderer, story.assets);
+      await ensureAssets(renderer, imageAssets(story.assets));
+      if (generation !== rebuildGenerationRef.current || renderer !== rendererRef.current) return;
+
       renderer.setCharacters(story.characters); // dialog resolves id → name/color per edit
       // Guard a stale selection (a node the agent has since deleted) — fall back to the
       // story's own start rather than letting the engine throw "node not found".
@@ -93,9 +167,11 @@ export function PlayCanvas({
         actionsRef.current = [];
         simRef.current = new Simulation(story, { seed: story.meta.seed, start });
       }
+      reconcileAudio(true);
       draw();
       setError(null);
     } catch (e) {
+      if (generation !== rebuildGenerationRef.current || renderer !== rendererRef.current) return;
       setError(e instanceof Error ? e.message : String(e));
     }
   }
@@ -104,6 +180,18 @@ export function PlayCanvas({
   function restart(): void {
     actionsRef.current = [];
     void rebuild();
+  }
+
+  function toggleMuted(): void {
+    const nextMuted = !muted;
+    playerRef.current?.activate();
+    playerRef.current?.setMuted(nextMuted);
+    setMuted(nextMuted);
+  }
+
+  function changeVolume(nextVolume: number): void {
+    playerRef.current?.setVolume(nextVolume);
+    setVolume(nextVolume);
   }
 
   // Mount the renderer once; tear it down on unmount. `destroy()` requires a completed
@@ -117,6 +205,14 @@ export function PlayCanvas({
       onChoose: (index) => step({ type: "CHOOSE", index }),
     });
     rendererRef.current = renderer;
+    const player = new AudioPlayer({
+      createHowl: (options) => new Howl(options),
+      resolveSource: (asset) => resolveAudioSource(session.story.assets, asset),
+      muted: true,
+      onVoiceStart: (_asset, source) => setGeneratedVoice(source.generated),
+      onVoiceEnd: () => setGeneratedVoice(false),
+    });
+    playerRef.current = player;
     void (async () => {
       const host = hostRef.current;
       if (host) await renderer.mount(host);
@@ -129,6 +225,9 @@ export function PlayCanvas({
     })();
     return () => {
       disposed = true;
+      rebuildGenerationRef.current += 1;
+      player.dispose();
+      if (playerRef.current === player) playerRef.current = null;
       if (mountedRef.current) {
         mountedRef.current = false;
         renderer.destroy();
@@ -172,6 +271,27 @@ export function PlayCanvas({
         <button type="button" onClick={restart}>
           ⟳ Restart
         </button>
+        <button
+          type="button"
+          onClick={toggleMuted}
+          aria-pressed={muted}
+          aria-label={muted ? "Unmute audio" : "Mute audio"}
+        >
+          {muted ? "Unmute audio" : "Mute audio"}
+        </button>
+        <label>
+          Volume
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={volume}
+            aria-label="Audio volume"
+            onChange={(event) => changeVolume(event.currentTarget.valueAsNumber)}
+          />
+        </label>
+        {generatedVoice && <p role="status">Generated voice audio is playing.</p>}
       </div>
     </section>
   );

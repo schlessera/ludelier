@@ -34,6 +34,7 @@ export const findReferencesTask: Task = {
         }
         if (stmt.op === "scene" && stmt.bg === id) refs.push({ path: at, kind: "asset" });
         if (stmt.op === "show" && stmt.asset === id) refs.push({ path: at, kind: "asset" });
+        if (stmt.op === "sound" && stmt.asset === id) refs.push({ path: at, kind: "asset" });
         if (stmt.op === "show" && stmt.sprite === id) refs.push({ path: at, kind: "sprite" });
         if (stmt.op === "hide" && stmt.sprite === id) refs.push({ path: at, kind: "sprite" });
         if (stmt.op === "say" && stmt.who === id) refs.push({ path: at, kind: "character" });

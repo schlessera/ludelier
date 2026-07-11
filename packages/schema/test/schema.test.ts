@@ -151,6 +151,12 @@ describe("validateStory", () => {
     expect(schema.type).toBe("object");
     expect(schema.properties).toBeDefined();
   });
+
+  it("exposes sound and stop-sound discriminants in JSON Schema", () => {
+    const schema = JSON.stringify(storyJsonSchema());
+    expect(schema).toContain('"sound"');
+    expect(schema).toContain('"stop-sound"');
+  });
 });
 
 describe("assets + scene/show/hide", () => {
@@ -161,6 +167,20 @@ describe("assets + scene/show/hide", () => {
       { id: "her", src: "/her.png" },
     ],
   };
+
+  it("defaults legacy assets to non-generated images", () => {
+    const res = validateStory({
+      ...base,
+      nodes: [{ id: "a", body: [{ op: "end" }] }],
+    });
+    expect(res.success).toBe(true);
+    if (res.success) {
+      expect(res.data.assets).toEqual([
+        { id: "bg", src: "/bg.png", kind: "image", generated: false },
+        { id: "her", src: "/her.png", kind: "image", generated: false },
+      ]);
+    }
+  });
 
   it("accepts scene/show/hide referencing declared assets", () => {
     const res = validateStory({
@@ -178,6 +198,59 @@ describe("assets + scene/show/hide", () => {
       ],
     });
     expect(res.success).toBe(true);
+  });
+
+  it("accepts sound and stop-sound with declared audio assets", () => {
+    const res = validateStory({
+      meta: { id: "sound", title: "Sound", start: "a" },
+      assets: [
+        { id: "bg", src: "/bg.png", kind: "image" },
+        { id: "theme", src: "/theme.ogg", kind: "audio", generated: true },
+      ],
+      nodes: [
+        {
+          id: "a",
+          body: [
+            { op: "scene", bg: "bg" },
+            { op: "sound", channel: "music", asset: "theme", loop: true },
+            { op: "stop-sound", channel: "music" },
+            { op: "end" },
+          ],
+        },
+      ],
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it("rejects cross-kind asset references", () => {
+    const res = validateStory({
+      meta: { id: "kind", title: "Kind", start: "a" },
+      assets: [
+        { id: "image", src: "/image.png", kind: "image" },
+        { id: "audio", src: "/audio.ogg", kind: "audio" },
+      ],
+      nodes: [
+        {
+          id: "a",
+          body: [
+            { op: "scene", bg: "audio" },
+            { op: "show", sprite: "slot", asset: "audio" },
+            { op: "sound", channel: "sfx", asset: "image" },
+            { op: "end" },
+          ],
+        },
+      ],
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) {
+      expect(res.issues.map((issue) => issue.message)).toEqual(
+        expect.arrayContaining([
+          'scene bg references audio asset "audio"; expected image asset',
+          'show references audio asset "audio"; expected image asset',
+          'sound references image asset "image"; expected audio asset',
+        ]),
+      );
+    }
   });
 
   it("defaults a show position to center", () => {

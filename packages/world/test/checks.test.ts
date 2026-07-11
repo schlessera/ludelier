@@ -132,6 +132,25 @@ describe("explore task is registered and runs", () => {
     expect(res.success).toBe(true);
     if (res.success) expect((res.data as { endReachable: boolean }).endReachable).toBe(true);
   });
+
+  it("allows a zero state cap through registered task dispatch", () => {
+    const task = createWorld().get("explore");
+    if (!task?.run) throw new Error("expected registered explore task");
+    const parsed = task.params.safeParse({ maxStates: 0 });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) throw new Error("expected maxStates: 0 to parse");
+    const res = task.run(loadCafe(), parsed.data);
+    expect(res.success).toBe(true);
+    if (res.success) {
+      expect(res.data).toEqual({
+        reached: [],
+        endReachable: false,
+        stuck: [],
+        truncated: true,
+        crashed: false,
+      });
+    }
+  });
 });
 
 describe("branch in the world API", () => {

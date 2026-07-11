@@ -1,5 +1,6 @@
 import type { Story, Condition, VarValue } from "@ludelier/schema";
-import type { Action, GameState, StageSprite } from "./state";
+import type { Action, AudioState, GameState, StageSprite } from "./state";
+import { initialAudioState } from "./state";
 import { rollInt } from "./rng";
 
 const MAX_STEPS = 100_000;
@@ -57,6 +58,8 @@ function resolve(story: Story, state: GameState): GameState {
   let vars = state.vars;
   let rng = state.rng;
   let stage = state.stage;
+  // Events are a reducer-run output, not a presentation queue: only the prior batch is cleared.
+  let audio: AudioState = { ...state.audio, events: [] };
   const transcript = state.transcript;
   let steps = 0;
 
@@ -66,7 +69,16 @@ function resolve(story: Story, state: GameState): GameState {
     }
     const body = nodeBody(story, node);
     if (index >= body.length) {
-      return { cursor: { node, index }, vars, rng, stage, transcript, pending: { kind: "end" }, done: true };
+      return {
+        cursor: { node, index },
+        vars,
+        rng,
+        stage,
+        audio,
+        transcript,
+        pending: { kind: "end" },
+        done: true,
+      };
     }
     const stmt = body[index]!;
     switch (stmt.op) {
@@ -76,6 +88,7 @@ function resolve(story: Story, state: GameState): GameState {
           vars,
           rng,
           stage,
+          audio,
           transcript: [...transcript, { who: stmt.who, text: stmt.text }],
           pending: { kind: "say", who: stmt.who, text: stmt.text },
           done: false,
@@ -131,12 +144,37 @@ function resolve(story: Story, state: GameState): GameState {
         stage = { ...stage, sprites: stage.sprites.filter((s) => s.id !== stmt.sprite) };
         index++;
         break;
+      case "sound": {
+        const loop = stmt.loop ?? stmt.channel === "music";
+        const seq = audio.nextEventSeq;
+        const event = { type: "play" as const, seq, channel: stmt.channel, asset: stmt.asset, loop };
+        audio = {
+          music: stmt.channel === "music" ? { asset: stmt.asset, loop, startedAtSeq: seq } : audio.music,
+          voice: stmt.channel === "voice" ? { asset: stmt.asset, loop, startedAtSeq: seq } : audio.voice,
+          events: [...audio.events, event],
+          nextEventSeq: seq + 1,
+        };
+        index++;
+        break;
+      }
+      case "stop-sound": {
+        const seq = audio.nextEventSeq;
+        audio = {
+          music: stmt.channel === "music" ? null : audio.music,
+          voice: stmt.channel === "voice" ? null : audio.voice,
+          events: [...audio.events, { type: "stop", seq, channel: stmt.channel }],
+          nextEventSeq: seq + 1,
+        };
+        index++;
+        break;
+      }
       case "choice":
         return {
           cursor: { node, index },
           vars,
           rng,
           stage,
+          audio,
           transcript,
           pending: {
             kind: "choice",
@@ -155,6 +193,7 @@ function resolve(story: Story, state: GameState): GameState {
           vars,
           rng,
           stage,
+          audio,
           transcript,
           pending: { kind: "end" },
           done: true,
@@ -177,6 +216,7 @@ export function initialState(story: Story, seed?: number, start?: string): GameS
     vars: {},
     rng: seeded,
     stage: { bg: null, sprites: [] },
+    audio: initialAudioState,
     pending: { kind: "end" },
     done: false,
     transcript: [],

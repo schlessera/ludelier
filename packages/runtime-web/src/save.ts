@@ -7,7 +7,7 @@ import type { GameState } from "@ludelier/engine";
  * be discarded rather than trusted: with the PWA auto-updating underneath saved games, a
  * changed story can otherwise strand the cursor on a node that no longer exists.
  */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 interface SaveRow {
   storyId: string;
@@ -33,14 +33,21 @@ export async function saveState(storyId: string, storyHash: string, state: GameS
   await db.saves.put({ storyId, state, updatedAt: Date.now(), storyHash, saveVersion: SAVE_VERSION });
 }
 
+/** Pure compatibility gate kept separate so legacy persisted rows are never accidentally trusted. */
+export function isCurrentSave<T extends Pick<SaveRow, "storyHash" | "saveVersion">>(
+  row: T | undefined,
+  storyHash: string,
+): row is T {
+  return row !== undefined && row.saveVersion === SAVE_VERSION && row.storyHash === storyHash;
+}
+
 /**
  * Load a save only if it matches the current story + save format — anything else
  * (older format, edited story, pre-versioning row) is treated as no save.
  */
 export async function loadSave(storyId: string, storyHash: string): Promise<GameState | null> {
   const row = await db.saves.get(storyId);
-  if (!row) return null;
-  if (row.saveVersion !== SAVE_VERSION || row.storyHash !== storyHash) return null;
+  if (!isCurrentSave(row, storyHash)) return null;
   return row.state;
 }
 

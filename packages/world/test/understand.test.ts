@@ -33,6 +33,18 @@ describe("find-references", () => {
       expect(refs.some((r) => r.kind === "character")).toBe(true);
     }
   });
+
+  it('finds sound statements that use asset "theme"', () => {
+    const story: Story = {
+      meta: { id: "sound", title: "Sound", start: "a" },
+      characters: [],
+      assets: [{ id: "theme", src: "/theme.ogg", kind: "audio", generated: false }],
+      nodes: [{ id: "a", body: [{ op: "sound", channel: "music", asset: "theme" }, { op: "end" }] }],
+    };
+    const res = run("find-references", story, { id: "theme" });
+    expect(res.success).toBe(true);
+    if (res.success) expect(res.data).toEqual([{ path: "nodes.a.body[0]", kind: "asset" }]);
+  });
 });
 
 describe("validate", () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import type { Layout, PanelImperativeHandle } from "react-resizable-panels";
@@ -8,11 +8,14 @@ import { validateStory } from "@ludelier/schema";
 import type { Issue, Story, StoryNode } from "@ludelier/schema";
 import type { TaskManifestEntry } from "@ludelier/world";
 import { openRouterProvider } from "@ludelier/authoring";
+import type { AgentTool } from "@ludelier/authoring";
 import { StoryMap } from "./storymap/StoryMap";
 import { ScriptLens } from "./storymap/ScriptLens";
 import { TaskForm } from "./forms/TaskForm";
+import { HealthPanel } from "./health/HealthPanel";
 import { PlayOverlay } from "./play/PlayOverlay";
 import { newStoryScaffold, parseStoryJson, serializeStory, storyFileName } from "./story/files";
+import { AssetPanel } from "./assets/AssetPanel";
 import cafeStory from "../../../examples/cafe.story.json";
 
 /** A counter that bumps on every session change (edit / undo / redo / chat) — drives re-render
@@ -31,7 +34,7 @@ function makeInitialSession(): EditorSession {
 
 /** Which inspector tab is showing: the selected node's script, the global edit forms,
  *  graph health, or the edit history. */
-type InspectorTab = "node" | "edit" | "health" | "history";
+type InspectorTab = "node" | "edit" | "assets" | "health" | "history";
 
 /** localStorage slot for the resizable column layout, so panel sizes survive reloads. */
 const LAYOUT_STORE = "ludelier.editor.layout";
@@ -59,6 +62,7 @@ export function App(): JSX.Element {
   // version counter alone doesn't bump on a swap).
   const [current, setCurrent] = useState(() => ({ session: makeInitialSession(), key: 0 }));
   const { session, key } = current;
+  const currentSessionRef = useRef(session);
   const version = useSessionVersion(session);
   // Snapshot recomputes validateStory + graph analysis, so memoize it on the session-change
   // counter — selection clicks re-render App but don't re-run that work.
@@ -74,6 +78,18 @@ export function App(): JSX.Element {
   // the graph immediately reveals that node's script.
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("node");
   const [playOpen, setPlayOpen] = useState(false);
+  const [assetTool, setAssetTool] = useState<AgentTool | undefined>();
+  const [assetEventVersion, bumpAssetEvent] = useReducer((n: number) => n + 1, 0);
+  // A human asset transaction crosses provider and persistence awaits without taking the
+  // EditorSession lock. Keep a synchronous app-level guard so Chat cannot acquire that lock
+  // between media persistence and its subsequent Story registration.
+  const assetGenerationActiveRef = useRef(false);
+  const [assetGenerationActive, setAssetGenerationActive] = useState(false);
+  const setHumanAssetGenerationActive = useCallback((active: boolean): void => {
+    assetGenerationActiveRef.current = active;
+    setAssetGenerationActive(active);
+  }, []);
+  const canStartAgentRun = useCallback((): boolean => !assetGenerationActiveRef.current, []);
 
   // Collapsible side docks (react-resizable-panels imperative handles). The panels stay
   // MOUNTED when collapsed — collapse is size→0, not unmount — so ChatPanel keeps its BYOK
@@ -113,15 +129,36 @@ export function App(): JSX.Element {
     document.documentElement.dataset.ready = "1";
   }, []);
 
-  /** Swap in a freshly opened/imported/new session; the old one (and its history) is dropped. */
-  function openSession(next: EditorSession): void {
+  /**
+   * Replace only the session captured by the initiating control. Async Open/Import work may
+   * complete after New or another session replacement; neither a stale completion nor an active
+   * agent/human asset transaction may mutate its detached session.
+   */
+  const openSession = useCallback((expected: EditorSession, next: EditorSession): boolean => {
+    const live = currentSessionRef.current;
+    if (live !== expected || live.busy || assetGenerationActiveRef.current) return false;
+    currentSessionRef.current = next;
     setSelected(null);
-    setCurrent((prev) => ({ session: next, key: prev.key + 1 }));
-  }
+    setAssetTool(undefined);
+    setCurrent((previous) => {
+      if (previous.session !== expected || previous.session.busy || assetGenerationActiveRef.current) {
+        currentSessionRef.current = previous.session;
+        return previous;
+      }
+      return { session: next, key: previous.key + 1 };
+    });
+    return true;
+  }, []);
 
   return (
     <div className="app">
-      <Toolbar session={session} snap={snap} onOpenSession={openSession} onPlay={() => setPlayOpen(true)} />
+      <Toolbar
+        session={session}
+        snap={snap}
+        onOpenSession={openSession}
+        assetGenerationActive={assetGenerationActive}
+        onPlay={() => setPlayOpen(true)}
+      />
       <div className="workspace">
         <nav className="rail" aria-label="Panels">
           <button
@@ -172,7 +209,13 @@ export function App(): JSX.Element {
             {/* Deliberately NOT keyed on session swap — the BYOK key/model/prompt are
                 session-independent and should survive Open / New. Collapse is size→0, not
                 unmount, so an in-flight run survives a toggle too. */}
-            <ChatPanel session={session} />
+            <ChatPanel
+              session={session}
+              assetTool={assetTool}
+              onAssetHostEvent={bumpAssetEvent}
+              assetGenerationActive={assetGenerationActive}
+              canStartAgentRun={canStartAgentRun}
+            />
           </Panel>
           <Separator className="handle" />
 
@@ -209,6 +252,10 @@ export function App(): JSX.Element {
               tab={inspectorTab}
               onTab={setInspectorTab}
               onOpenSession={openSession}
+              assetHostEventVersion={assetEventVersion}
+              onAgentToolChange={setAssetTool}
+              onHumanGenerationChange={setHumanAssetGenerationActive}
+              assetGenerationActive={assetGenerationActive}
             />
           </Panel>
         </Group>
@@ -248,16 +295,19 @@ function Toolbar({
   session,
   snap,
   onOpenSession,
+  assetGenerationActive,
   onPlay,
 }: {
   session: EditorSession;
   snap: EditorSnapshot;
-  onOpenSession: (next: EditorSession) => void;
+  onOpenSession: (expected: EditorSession, next: EditorSession) => boolean;
+  assetGenerationActive: boolean;
   onPlay: () => void;
 }): JSX.Element {
   const [newId, setNewId] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const replacementDisabled = session.busy || assetGenerationActive;
 
   function addNode(): void {
     const id = newId.trim();
@@ -279,8 +329,19 @@ function Toolbar({
       setErr(`open failed — ${formatIssues(res.issues)}`);
       return;
     }
+    if (!onOpenSession(session, new EditorSession(res.story))) {
+      setErr("open canceled — the current session changed or has a pending operation.");
+      return;
+    }
     setErr(null);
-    onOpenSession(new EditorSession(res.story));
+  }
+
+  function newSession(): void {
+    if (!onOpenSession(session, new EditorSession(newStoryScaffold()))) {
+      setErr("new canceled — the current session changed or has a pending operation.");
+      return;
+    }
+    setErr(null);
   }
 
   return (
@@ -298,13 +359,13 @@ function Toolbar({
       <div className="spacer" />
       <button
         type="button"
-        onClick={() => onOpenSession(new EditorSession(newStoryScaffold()))}
-        disabled={session.busy}
+        onClick={newSession}
+        disabled={replacementDisabled}
         title="Start a minimal new story"
       >
         New
       </button>
-      <button type="button" onClick={() => fileRef.current?.click()} disabled={session.busy}>
+      <button type="button" onClick={() => fileRef.current?.click()} disabled={replacementDisabled}>
         Open…
       </button>
       <input
@@ -312,6 +373,7 @@ function Toolbar({
         type="file"
         accept=".json,application/json"
         hidden
+        disabled={replacementDisabled}
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) void openFile(file);
@@ -326,10 +388,10 @@ function Toolbar({
         Save
       </button>
       <span className="toolbar-sep" />
-      <button type="button" onClick={() => session.undo()} disabled={!snap.canUndo}>
+      <button type="button" onClick={() => session.undo()} disabled={session.busy || !snap.canUndo}>
         ↶ Undo
       </button>
-      <button type="button" onClick={() => session.redo()} disabled={!snap.canRedo}>
+      <button type="button" onClick={() => session.redo()} disabled={session.busy || !snap.canRedo}>
         ↷ Redo
       </button>
       <input
@@ -373,6 +435,13 @@ function FeedLine({ e }: { e: AgentEvent }): JSX.Element | null {
       </li>
     );
   }
+  if (e.kind === "host-tool") {
+    return (
+      <li className={e.success ? "ev-edit" : "ev-edit bad"}>
+        {e.success ? "✏️" : "✕"} <code>{e.name}</code> <span className="muted">{e.effects.join(", ")}</span>
+      </li>
+    );
+  }
   if (e.kind === "verify") {
     if (!e.clean) return <li className="ev-verify bad">⚠ {e.problems.join("; ")}</li>;
     return (
@@ -389,7 +458,19 @@ function FeedLine({ e }: { e: AgentEvent }): JSX.Element | null {
  *  no client-side secret to encrypt with) — hence opt-in, labelled, and easy to clear. */
 const KEY_STORE = "ludelier.byok.openrouter";
 
-function ChatPanel({ session }: { session: EditorSession }): JSX.Element {
+function ChatPanel({
+  session,
+  assetTool,
+  onAssetHostEvent,
+  assetGenerationActive,
+  canStartAgentRun,
+}: {
+  session: EditorSession;
+  assetTool: AgentTool | undefined;
+  onAssetHostEvent: () => void;
+  assetGenerationActive: boolean;
+  canStartAgentRun: () => boolean;
+}): JSX.Element {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem(KEY_STORE) ?? "");
   const [remember, setRemember] = useState(() => localStorage.getItem(KEY_STORE) !== null);
   const [model, setModel] = useState("openai/gpt-5-mini");
@@ -419,6 +500,10 @@ function ChatPanel({ session }: { session: EditorSession }): JSX.Element {
 
   async function onSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
+    if (running || assetGenerationActive || !canStartAgentRun()) {
+      setError("Wait for the current asset generation to finish.");
+      return;
+    }
     if (!apiKey.trim()) {
       setError("Paste an OpenRouter API key (BYOK).");
       return;
@@ -442,12 +527,16 @@ function ChatPanel({ session }: { session: EditorSession }): JSX.Element {
         model,
         runId: `chat-${Date.now()}`,
         signal: ac.signal,
+        tools: assetTool === undefined ? undefined : [assetTool],
         // runAgent's default (500) would make the checkpoint prompt unreachable in
         // practice — 25 turns is long enough to build, short enough to stay supervised.
         checkpointEvery: 25,
         onEvent: (ev) => {
           if (ev.kind === "turn") setStep(ev.step + 1);
-          else setEvents((prev) => [...prev, ev]);
+          else {
+            if (ev.kind === "host-tool" && ev.name === "generate-asset") onAssetHostEvent();
+            setEvents((prev) => [...prev, ev]);
+          }
         },
         onCheckpoint: (s) =>
           new Promise<boolean>((resolve) => {
@@ -493,13 +582,24 @@ function ChatPanel({ session }: { session: EditorSession }): JSX.Element {
           Remember key on this device (stored unencrypted in this browser)
         </label>
         <input placeholder="model slug" value={model} onChange={(e) => setModel(e.target.value)} />
-        <textarea rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} disabled={running} />
+        <textarea
+          rows={3}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          disabled={running || assetGenerationActive}
+        />
         {running ? (
           <button type="button" className="danger" onClick={() => abortRef.current?.abort()}>
             ✕ Interrupt {step > 0 ? `(turn ${step})` : ""}
           </button>
         ) : (
-          <button type="submit">Send</button>
+          <button
+            type="submit"
+            disabled={assetGenerationActive}
+            title={assetGenerationActive ? "Wait for asset generation to finish." : undefined}
+          >
+            Send
+          </button>
         )}
       </form>
 
@@ -686,6 +786,10 @@ function Inspector({
   tab,
   onTab,
   onOpenSession,
+  assetHostEventVersion,
+  onAgentToolChange,
+  onHumanGenerationChange,
+  assetGenerationActive,
 }: {
   session: EditorSession;
   snap: EditorSnapshot;
@@ -693,18 +797,31 @@ function Inspector({
   selectedNode: StoryNode | null;
   tab: InspectorTab;
   onTab: (t: InspectorTab) => void;
-  onOpenSession: (next: EditorSession) => void;
+  onOpenSession: (expected: EditorSession, next: EditorSession) => boolean;
+  assetHostEventVersion: number;
+  onAgentToolChange: (tool: AgentTool | undefined) => void;
+  onHumanGenerationChange: (active: boolean) => void;
+  assetGenerationActive: boolean;
 }): JSX.Element {
-  const unhealthy = !snap.valid || snap.graph.unreachable.length > 0 || snap.graph.deadEnds.length > 0;
+  const unhealthy =
+    !snap.valid ||
+    snap.graph.unreachable.length > 0 ||
+    snap.graph.deadEnds.length > 0 ||
+    !snap.explore.endReachable ||
+    snap.explore.stuck.length > 0 ||
+    snap.explore.crashed;
   return (
     <section className="panel inspector">
-      <div className="tabs" role="tablist">
+      <div className="tabs" role="tablist" aria-label="Inspector">
         <TabButton id="node" tab={tab} onTab={onTab}>
           Node
           {selectedNode && <code className="tab-badge">{selectedNode.id}</code>}
         </TabButton>
         <TabButton id="edit" tab={tab} onTab={onTab}>
           Edit
+        </TabButton>
+        <TabButton id="assets" tab={tab} onTab={onTab}>
+          Assets
         </TabButton>
         <TabButton id="health" tab={tab} onTab={onTab}>
           Health
@@ -716,14 +833,65 @@ function Inspector({
         </TabButton>
       </div>
       <div className="tab-body">
-        {tab === "node" && <ScriptLens node={selectedNode} session={session} manifest={manifest} />}
-        {tab === "edit" && <EditTasks session={session} snap={snap} manifest={manifest} />}
-        {tab === "health" && <HealthPanel snap={snap} />}
-        {tab === "history" && <HistoryPanel session={session} snap={snap} onOpenSession={onOpenSession} />}
+        <div
+          role="tabpanel"
+          id="inspector-panel-node"
+          aria-labelledby="inspector-tab-node"
+          hidden={tab !== "node"}
+        >
+          {tab === "node" && <ScriptLens node={selectedNode} session={session} manifest={manifest} />}
+        </div>
+        <div
+          role="tabpanel"
+          id="inspector-panel-edit"
+          aria-labelledby="inspector-tab-edit"
+          hidden={tab !== "edit"}
+        >
+          {tab === "edit" && <EditTasks session={session} snap={snap} manifest={manifest} />}
+        </div>
+        <div
+          role="tabpanel"
+          id="inspector-panel-assets"
+          aria-labelledby="inspector-tab-assets"
+          hidden={tab !== "assets"}
+        >
+          <AssetPanel
+            session={session}
+            story={snap.story}
+            hostEventVersion={assetHostEventVersion}
+            onAgentToolChange={onAgentToolChange}
+            onHumanGenerationChange={onHumanGenerationChange}
+          />
+        </div>
+        <div
+          role="tabpanel"
+          id="inspector-panel-health"
+          aria-labelledby="inspector-tab-health"
+          hidden={tab !== "health"}
+        >
+          {tab === "health" && <HealthPanel valid={snap.valid} graph={snap.graph} explore={snap.explore} />}
+        </div>
+        <div
+          role="tabpanel"
+          id="inspector-panel-history"
+          aria-labelledby="inspector-tab-history"
+          hidden={tab !== "history"}
+        >
+          {tab === "history" && (
+            <HistoryPanel
+              session={session}
+              snap={snap}
+              onOpenSession={onOpenSession}
+              assetGenerationActive={assetGenerationActive}
+            />
+          )}
+        </div>
       </div>
     </section>
   );
 }
+
+const inspectorTabs: readonly InspectorTab[] = ["node", "edit", "assets", "health", "history"];
 
 function TabButton({
   id,
@@ -739,32 +907,33 @@ function TabButton({
   return (
     <button
       type="button"
+      id={`inspector-tab-${id}`}
       role="tab"
+      aria-controls={`inspector-panel-${id}`}
       aria-selected={tab === id}
+      tabIndex={tab === id ? 0 : -1}
       className={`tab ${tab === id ? "active" : ""}`}
       onClick={() => onTab(id)}
+      onKeyDown={(event) => {
+        const index = inspectorTabs.indexOf(id);
+        const next =
+          event.key === "ArrowRight"
+            ? inspectorTabs[(index + 1) % inspectorTabs.length]
+            : event.key === "ArrowLeft"
+              ? inspectorTabs[(index - 1 + inspectorTabs.length) % inspectorTabs.length]
+              : event.key === "Home"
+                ? inspectorTabs[0]
+                : event.key === "End"
+                  ? inspectorTabs[inspectorTabs.length - 1]
+                  : undefined;
+        if (next === undefined) return;
+        event.preventDefault();
+        onTab(next);
+        document.getElementById(`inspector-tab-${next}`)?.focus();
+      }}
     >
       {children}
     </button>
-  );
-}
-
-function HealthPanel({ snap }: { snap: EditorSnapshot }): JSX.Element {
-  return (
-    <dl className="health">
-      <dt>valid</dt>
-      <dd className={snap.valid ? "ok" : "bad"}>{String(snap.valid)}</dd>
-      <dt>reachable</dt>
-      <dd>{snap.graph.reachable.length}</dd>
-      <dt>unreachable</dt>
-      <dd className={snap.graph.unreachable.length ? "bad" : "ok"}>
-        {snap.graph.unreachable.join(", ") || "none"}
-      </dd>
-      <dt>dead ends</dt>
-      <dd className={snap.graph.deadEnds.length ? "bad" : "ok"}>
-        {snap.graph.deadEnds.join(", ") || "none"}
-      </dd>
-    </dl>
   );
 }
 
@@ -772,10 +941,12 @@ function HistoryPanel({
   session,
   snap,
   onOpenSession,
+  assetGenerationActive,
 }: {
   session: EditorSession;
   snap: EditorSnapshot;
-  onOpenSession: (next: EditorSession) => void;
+  onOpenSession: (expected: EditorSession, next: EditorSession) => boolean;
+  assetGenerationActive: boolean;
 }): JSX.Element {
   const [logErr, setLogErr] = useState<string | null>(null);
   const logRef = useRef<HTMLInputElement>(null);
@@ -788,8 +959,11 @@ function HistoryPanel({
       setLogErr(`import failed — ${formatIssues(res.issues)}`);
       return;
     }
+    if (!onOpenSession(session, res.data)) {
+      setLogErr("import canceled — the current session changed or has a pending operation.");
+      return;
+    }
     setLogErr(null);
-    onOpenSession(res.data);
   }
 
   return (
@@ -812,7 +986,7 @@ function HistoryPanel({
         <button
           type="button"
           onClick={() => logRef.current?.click()}
-          disabled={session.busy}
+          disabled={session.busy || assetGenerationActive}
           title="Replay a .log.jsonl onto this session's base story"
         >
           Import log…
@@ -822,6 +996,7 @@ function HistoryPanel({
           type="file"
           accept=".jsonl,.log,.txt,application/jsonl"
           hidden
+          disabled={session.busy || assetGenerationActive}
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) void importLogFile(file);

@@ -1,11 +1,45 @@
 import { validateStory } from "@ludelier/schema";
 import { hashState, type Pending, Simulation, StatementBudgetError } from "@ludelier/engine";
+import { AudioPlayer, type AudioSource } from "@ludelier/audio-web";
+import { Howl } from "howler";
 import { PixiRenderer } from "@ludelier/renderer-pixi";
 import storyData from "../../../examples/cafe.story.json";
 import { clearSave, loadSave, saveState } from "./save";
 
+// This query-selected fixture exercises browser-only audio presentation behavior without
+// changing the playable café example. Its generated flag is the disclosure boundary under test.
+const generatedVoiceFixture = {
+  meta: { id: "generated-voice-e2e", title: "Generated voice fixture", start: "start", seed: 1 },
+  characters: [{ id: "narrator", name: "Narrator" }],
+  assets: [
+    { id: "ordinary", src: "/assets/e2e-generated-voice.wav", kind: "audio", generated: false },
+    // Three seconds gives browser E2E a deterministic visible playback window before onend.
+    { id: "generated-natural", src: "/assets/e2e-generated-voice.wav", kind: "audio", generated: true },
+    { id: "generated-loop", src: "/assets/e2e-generated-voice.wav", kind: "audio", generated: true },
+  ],
+  nodes: [
+    {
+      id: "start",
+      body: [
+        { op: "say", who: "narrator", text: "Ready." },
+        { op: "sound", channel: "voice", asset: "ordinary", loop: true },
+        { op: "say", who: "narrator", text: "Ordinary voice." },
+        { op: "stop-sound", channel: "voice" },
+        { op: "sound", channel: "voice", asset: "generated-natural" },
+        { op: "say", who: "narrator", text: "Generated natural voice." },
+        { op: "sound", channel: "voice", asset: "generated-loop", loop: true },
+        { op: "say", who: "narrator", text: "Generated looping voice." },
+        { op: "stop-sound", channel: "voice" },
+        { op: "say", who: "narrator", text: "Voice stopped." },
+        { op: "end" },
+      ],
+    },
+  ],
+};
+
 // Content is validated at load time — the same Zod guardrail AI-authored stories pass.
-const parsed = validateStory(storyData);
+const fixture = new URLSearchParams(location.search).get("fixture");
+const parsed = validateStory(fixture === "generated-voice" ? generatedVoiceFixture : storyData);
 if (!parsed.success) {
   throw new Error("invalid story: " + JSON.stringify(parsed.issues, null, 2));
 }
@@ -16,8 +50,19 @@ const storyHash = hashState(story);
 // id → display name for screen-reader announcements (`pending.who` is the character *id*).
 const characterNames = new Map(story.characters.map((c) => [c.id, c.name]));
 
+// The renderer receives only images. Audio remains a browser presentation concern with its own
+// source resolver, rather than leaking media policy into Pixi or the simulation.
+const imageAssets = story.assets.filter((asset) => asset.kind === "image");
+const audioSources = new Map<string, AudioSource>(
+  story.assets
+    .filter((asset) => asset.kind === "audio")
+    .map((asset) => [asset.id, { src: asset.src, generated: asset.generated }]),
+);
+
 let sim: Simulation;
 let liveRegion: HTMLElement | null = null;
+let audioPlayer: AudioPlayer | null = null;
+let generatedVoiceNotice: HTMLElement | null = null;
 
 /**
  * Show a recoverable error overlay instead of hard-crashing the page. The reducer throws a
@@ -46,6 +91,7 @@ function fatal(err: unknown): void {
     box.append(p, a);
     root.append(box);
   }
+  audioPlayer?.dispose();
   document.documentElement.dataset.error = "1";
 }
 
@@ -74,6 +120,7 @@ function doChoose(index: number): void {
  * Registered after the simulation exists (see `main`).
  */
 function onKeydown(e: KeyboardEvent): void {
+  if (e.target instanceof Element && e.target.closest('[aria-label="Audio controls"]')) return;
   if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return; // don't hijack shortcuts / held keys
   if (e.key === "Enter" || e.key === " ") {
     e.preventDefault(); // Space must not scroll the page
@@ -94,6 +141,60 @@ function createLiveRegion(parent: HTMLElement): HTMLElement {
     "position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0";
   parent.append(el);
   return el;
+}
+
+/** Build keyboard-accessible controls without coupling playback state back into GameState. */
+function createAudioControls(parent: HTMLElement, player: AudioPlayer): HTMLElement {
+  const controls = document.createElement("div");
+  controls.setAttribute("role", "group");
+  controls.setAttribute("aria-label", "Audio controls");
+  controls.style.cssText =
+    "position:fixed;right:12px;bottom:12px;z-index:1;display:flex;align-items:center;gap:8px;padding:8px;background:#0e1117d9;color:#eee;font:14px system-ui,sans-serif";
+
+  const mute = document.createElement("button");
+  mute.type = "button";
+  const volumeLabel = document.createElement("label");
+  volumeLabel.textContent = "Volume";
+  const volume = document.createElement("input");
+  volume.id = "audio-volume";
+  volume.type = "range";
+  volume.min = "0";
+  volume.max = "1";
+  volume.step = "0.05";
+  volume.value = String(player.getVolume());
+  volume.setAttribute("aria-label", "Audio volume");
+  volumeLabel.htmlFor = volume.id;
+  const disclosure = document.createElement("p");
+  disclosure.hidden = true;
+  disclosure.setAttribute("role", "status");
+  disclosure.style.margin = "0";
+
+  const updateMuteLabel = () => {
+    const muted = player.isMuted();
+    mute.textContent = muted ? "Unmute audio" : "Mute audio";
+    mute.setAttribute("aria-label", muted ? "Unmute audio" : "Mute audio");
+    mute.setAttribute("aria-pressed", String(muted));
+    document.documentElement.dataset.audioMuted = muted ? "1" : "0";
+  };
+  mute.addEventListener("click", () => {
+    const nextMuted = !player.isMuted();
+    player.activate();
+    player.setMuted(nextMuted);
+    updateMuteLabel();
+  });
+  volume.addEventListener("input", () => player.setVolume(volume.valueAsNumber));
+  updateMuteLabel();
+
+  controls.append(mute, volumeLabel, volume, disclosure);
+  parent.append(controls);
+  return disclosure;
+}
+
+function updateGeneratedVoiceNotice(source: AudioSource | null): void {
+  if (!generatedVoiceNotice) return;
+  const generated = source?.generated === true;
+  generatedVoiceNotice.hidden = !generated;
+  generatedVoiceNotice.textContent = generated ? "Generated voice audio is playing." : "";
 }
 
 /** The current pending step as one announceable line. */
@@ -129,6 +230,7 @@ function update(): void {
     // Only touch the DOM when the line changes — rewriting identical text re-announces it.
     if (liveRegion.textContent !== line) liveRegion.textContent = line;
   }
+  audioPlayer?.reconcile(sim.state.audio);
   void saveState(story.meta.id, storyHash, sim.state);
   // Agent-native test surface: every action a player can take is callable here too.
   (window as unknown as { __ludelier: unknown }).__ludelier = {
@@ -154,7 +256,8 @@ async function main(): Promise<void> {
     await renderer.mount(root);
     renderer.setCharacters(story.characters);
     // Preload every declared asset up front so render() stays synchronous.
-    await renderer.preload(story.assets);
+    // Preload only visual assets; audio URLs are resolved by AudioPlayer when a cue is played.
+    await renderer.preload(imageAssets);
   } catch (err) {
     fatal(err);
     return;
@@ -175,6 +278,16 @@ async function main(): Promise<void> {
       const saved = await loadSave(story.meta.id, storyHash);
       if (saved) sim.state = saved;
     }
+    audioPlayer = new AudioPlayer({
+      createHowl: (options) => new Howl(options),
+      resolveSource: (asset) => audioSources.get(asset),
+      // Do not create/play Howls until the explicit Unmute control is clicked.
+      muted: true,
+      onVoiceStart: (_asset, source) => updateGeneratedVoiceNotice(source),
+      onVoiceEnd: () => updateGeneratedVoiceNotice(null),
+    });
+    generatedVoiceNotice = createAudioControls(root, audioPlayer);
+    audioPlayer.initialize(sim.state.audio);
     update();
   } catch (err) {
     fatal(err);
@@ -182,6 +295,13 @@ async function main(): Promise<void> {
   }
   // Only listen once a simulation exists — a keypress during init must not dispatch into nothing.
   document.addEventListener("keydown", onKeydown);
+  // BFCache preserves this document and its controls. Keep the presentation adapter alive for a
+  // persisted pagehide; only a real unload must release its browser-owned audio resources.
+  window.addEventListener("pagehide", (event) => {
+    if (event.persisted) return;
+    audioPlayer?.dispose();
+    audioPlayer = null;
+  });
   // Signal first paint is done — Playwright waits on this before asserting/screenshotting.
   requestAnimationFrame(() => {
     document.documentElement.dataset.ready = "1";

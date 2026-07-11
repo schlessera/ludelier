@@ -110,6 +110,24 @@ export const HideStatement = z.object({
   id: StatementId.optional(),
   sprite: Id,
 });
+/** Audio channels are logical playback lanes, not provider-specific concepts. */
+export const SoundChannel = z.enum(["music", "sfx", "voice"]);
+export type SoundChannel = z.infer<typeof SoundChannel>;
+
+/** Request playback of a declared audio asset. Playback semantics are owned by the engine. */
+export const SoundStatement = z.object({
+  op: z.literal("sound"),
+  id: StatementId.optional(),
+  channel: SoundChannel,
+  asset: Id,
+  loop: z.boolean().optional(),
+});
+/** Stop playback on one logical audio channel. */
+export const StopSoundStatement = z.object({
+  op: z.literal("stop-sound"),
+  id: StatementId.optional(),
+  channel: SoundChannel,
+});
 
 /** The full statement set. Discriminated on `op` for precise validation + narrowing. */
 export const Statement = z.discriminatedUnion("op", [
@@ -124,6 +142,8 @@ export const Statement = z.discriminatedUnion("op", [
   SceneStatement,
   ShowStatement,
   HideStatement,
+  SoundStatement,
+  StopSoundStatement,
 ]);
 export type Statement = z.infer<typeof Statement>;
 
@@ -134,14 +154,20 @@ export const Character = z.object({
 });
 export type Character = z.infer<typeof Character>;
 
+/** A declared asset's media kind. Legacy assets default to `image` when parsed. */
+export const AssetKind = z.enum(["image", "audio"]);
+export type AssetKind = z.infer<typeof AssetKind>;
+
 /**
- * A media asset (image now; audio later) referenced by id from statements.
- * `src` is a path/URL the runtime resolves and loads — declaring assets centrally
- * lets the renderer preload them and gives P3 a home for provenance sidecars.
+ * A media asset referenced by Story statements. `src` is a path/URL the runtime resolves and
+ * loads; `kind` lets Story validation enforce media-compatible references. `generated` is
+ * runtime-safe disclosure metadata, not private generation provenance.
  */
 export const Asset = z.object({
   id: Id,
   src: z.string().min(1),
+  kind: AssetKind.default("image"),
+  generated: z.boolean().default(false),
 });
 export type Asset = z.infer<typeof Asset>;
 

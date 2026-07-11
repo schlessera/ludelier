@@ -4,6 +4,7 @@ import { validateStory, type Story } from "@ludelier/schema";
 import { runAgent } from "../src/run";
 import type { AgentEvent } from "../src/run";
 import type { LLMProvider, ToolCall } from "../src/provider";
+import type { AgentTool } from "../src/tools";
 
 const base: Story = {
   meta: { id: "t", title: "T", start: "a" },
@@ -379,6 +380,34 @@ describe("runAgent (hermetic, scripted provider)", () => {
     expect(doneMsg?.content).toContain('"ok":true');
     expect(doneMsg?.content).toContain("no play-through can currently reach");
   });
+  it("suppresses runtime-unreached claims when exploration reaches its state cap", async () => {
+    // The first 4,999 successors fit below explore's 5,000-state cap; the remaining statically
+    // reachable endings are not evidence of a gated branch because the exploration is incomplete.
+    const destinations = Array.from({ length: 5_001 }, (_, index) => `ending-${index}`);
+    const story: Story = {
+      meta: { id: "explore-cap", title: "Explore cap", start: "a" },
+      characters: [],
+      assets: [],
+      nodes: [
+        {
+          id: "a",
+          body: [{ op: "choice", options: destinations.map((goto) => ({ label: goto, goto })) }],
+        },
+        ...destinations.map((id) => ({ id, body: [{ op: "end" as const }] })),
+      ],
+    };
+
+    const res = await runAgent({
+      provider: scriptedTools([[call("done", {}, "done")]]),
+      prompt: "verify the branching story",
+      story,
+      maxSteps: 1,
+    });
+
+    expect(res.completed).toBe(true);
+    expect(res.verification.truncated).toBe(true);
+    expect(res.verification.runtimeUnreached).toEqual([]);
+  });
 
   it("continues past a checkpoint the caller approves", async () => {
     let asked = 0;
@@ -402,5 +431,174 @@ describe("runAgent (hermetic, scripted provider)", () => {
     expect(asked).toBe(1); // checkpoint at step 2, approved → run continues to completion
     expect(res.stopReason).toBe("completed");
     expect(res.completed).toBe(true);
+  });
+  it("dispatches an async host tool, advertises it, and emits compact progress", async () => {
+    const events: AgentEvent[] = [];
+    const offered: string[][] = [];
+    let turn = 0;
+    let seenRunId: string | undefined;
+    let seenStoryTitle: string | undefined;
+    const hostTool: AgentTool = {
+      definition: {
+        name: "host-generate-preview",
+        description: "Generate a private preview.",
+        parameters: { type: "object", properties: {}, additionalProperties: false },
+      },
+      effects: ["paid-network", "filesystem"],
+      async handler(context) {
+        await Promise.resolve();
+        seenRunId = context.runId;
+        seenStoryTitle = context.story.meta.title;
+        return { success: true, data: { assetId: "preview-1", status: "ready" } };
+      },
+    };
+    const provider: LLMProvider = {
+      id: "mock",
+      capabilities: { jsonSchema: true, tools: true },
+      async complete(request) {
+        offered.push((request.tools ?? []).map((tool) => tool.name));
+        return {
+          text: "",
+          model: "mock",
+          toolCalls:
+            turn++ === 0 ? [call(hostTool.definition.name, {}, "host-1")] : [call("done", {}, "done-1")],
+        };
+      },
+    };
+
+    const res = await runAgent({
+      provider,
+      prompt: "make a preview",
+      story: base,
+      runId: "host-run",
+      tools: [hostTool],
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(res.completed).toBe(true);
+    expect(seenRunId).toBe("host-run");
+    expect(seenStoryTitle).toBe("T");
+    expect(offered[0]).toContain(hostTool.definition.name);
+    expect(events).toContainEqual({
+      kind: "host-tool",
+      name: hostTool.definition.name,
+      effects: ["paid-network", "filesystem"],
+      success: true,
+    });
+    expect(res.transcript.find((message) => message.toolCallId === "host-1")?.content).toBe(
+      JSON.stringify({ success: true, data: { assetId: "preview-1", status: "ready" } }),
+    );
+  });
+
+  it("converts rejected host handlers into a redacted failure and continues the run", async () => {
+    const secret = "host-rejection-secret-never-expose";
+    const events: AgentEvent[] = [];
+    const hostTool: AgentTool = {
+      definition: {
+        name: "host-rejects",
+        description: "A host tool whose provider call rejects.",
+        parameters: { type: "object", additionalProperties: false },
+      },
+      effects: ["paid-network"],
+      async handler() {
+        throw new Error(`provider rejected with ${secret}`);
+      },
+    };
+
+    const res = await runAgent({
+      provider: scriptedTools([[call("host-rejects", {}, "rejected")], [call("done", {}, "done")]]),
+      prompt: "continue after host failure",
+      story: base,
+      tools: [hostTool],
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(res.completed).toBe(true);
+    expect(res.commands).toEqual([]);
+    expect(events).toContainEqual({
+      kind: "host-tool",
+      name: "host-rejects",
+      effects: ["paid-network"],
+      success: false,
+    });
+    expect(res.transcript.find((message) => message.toolCallId === "rejected")?.content).toBe(
+      JSON.stringify({
+        success: false,
+        issues: [{ path: "host", message: 'host tool "host-rejects" failed' }],
+      }),
+    );
+    expect(JSON.stringify(res)).not.toContain(secret);
+  });
+
+  it("rejects host tool names colliding with world tasks, done, or each other before provider use", async () => {
+    let providerCalls = 0;
+    const provider: LLMProvider = {
+      id: "mock",
+      capabilities: { jsonSchema: true, tools: true },
+      async complete() {
+        providerCalls++;
+        return { text: "", model: "mock", toolCalls: [call("done", {}, "done")] };
+      },
+    };
+    const hostTool = (name: string): AgentTool => ({
+      definition: { name, description: "host test tool", parameters: { type: "object" } },
+      effects: ["read"],
+      async handler() {
+        return { success: true, data: null };
+      },
+    });
+    const run = (tools: AgentTool[]) => runAgent({ provider, prompt: "x", story: base, tools });
+
+    await expect(run([hostTool("graph")])).rejects.toThrow('host tool "graph" conflicts with world task');
+    await expect(run([hostTool("done")])).rejects.toThrow(
+      'host tool "done" conflicts with the reserved done tool',
+    );
+    await expect(run([hostTool("host-duplicate"), hostTool("host-duplicate")])).rejects.toThrow(
+      'duplicate host tool "host-duplicate"',
+    );
+    expect(providerCalls).toBe(0);
+  });
+
+  it("feeds host failures and approval-required results back without changing the story", async () => {
+    const hostTool: AgentTool = {
+      definition: {
+        name: "host-generate-preview",
+        description: "Generate a preview after host approval.",
+        parameters: { type: "object", properties: { request: { type: "string" } }, required: ["request"] },
+      },
+      effects: ["paid-network"],
+      async handler({ call: toolCall }) {
+        const { request } = toolCall.arguments as { request: string };
+        return {
+          success: false,
+          issues: [
+            {
+              path: request === "approved" ? "authorization" : "provider",
+              message: request === "approved" ? "approval required" : "preview generation failed",
+            },
+          ],
+        };
+      },
+    };
+    const res = await runAgent({
+      provider: scriptedTools([
+        [call(hostTool.definition.name, { request: "fail" }, "failure")],
+        [call(hostTool.definition.name, { request: "approved" }, "approval")],
+        [call("done", {}, "done")],
+      ]),
+      prompt: "generate a preview",
+      story: base,
+      runId: "host-run",
+      tools: [hostTool],
+    });
+
+    expect(res.completed).toBe(true);
+    expect(res.commands).toEqual([]);
+    expect(hashStory(res.story)).toBe(hashStory(normalizeStatementIds(base)));
+    const results = res.transcript
+      .filter((message) => message.role === "tool")
+      .map((message) => message.content);
+    expect(results.some((content) => content.includes("preview generation failed"))).toBe(true);
+    expect(results.some((content) => content.includes("approval required"))).toBe(true);
   });
 });

@@ -7,6 +7,7 @@
   --accent: #58a6ff;
   --ok: #3fb950;
   --bad: #f85149;
+  --warn: #d29922;
   color-scheme: dark;
 }
 
@@ -284,6 +285,11 @@ textarea {
 .badge.bad,
 .bad {
   color: var(--bad);
+}
+
+.badge.warn,
+.warn {
+  color: var(--warn);
 }
 
 .err {
@@ -834,6 +840,79 @@ button.mini {
 .tab-hint {
   margin: 0 0 10px;
   font-size: 11.5px;
+}
+
+/* Asset inspector: dense controls and a contained preview, matching the task form rhythm. */
+.assets-panel h2 {
+  margin-top: 0;
+}
+
+.assets-list {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.assets-list li {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) auto minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+  font-size: 11px;
+}
+
+.asset-src {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-form {
+  display: grid;
+  gap: 8px;
+}
+
+.asset-form .field {
+  display: grid;
+  gap: 4px;
+}
+
+.asset-form select {
+  width: 100%;
+  padding: 7px 8px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.asset-approval {
+  margin-top: 2px;
+}
+
+.asset-result {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.asset-preview,
+.asset-result audio {
+  width: 100%;
+  max-height: 220px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #0b0e14;
+  object-fit: contain;
+}
+
+.asset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 /* Play preview: on-demand modal overlay, or popped out into a separate window. */

@@ -4,9 +4,10 @@ import { initialState, reducer } from "./reducer";
 import { stableStringify } from "./hash";
 
 export interface ExploreReport {
-  /** Node ids actually visited by *executing* the story (sorted). Respects `if` conditions at
-   *  runtime, so it can be a strict subset of the static graph's reachable set — a node reachable
-   *  only through a choice option whose `if` is never satisfiable will not appear here. */
+  /** Node ids entered while *executing* the story, including nodes passed through by nonblocking
+   *  resolution (sorted). Respects `if` conditions at runtime, so it can be a strict subset of
+   *  the static graph's reachable set — a node reachable only through a choice option whose `if`
+   *  is never satisfiable will not appear here. */
   reached: string[];
   /** Whether at least one explored path terminates in an `end` (kind === "end", not a run-off). */
   endReachable: boolean;
@@ -35,6 +36,52 @@ function actionsFor(state: GameState): Action[] {
   return [];
 }
 
+/** Canonical state identity for traversal; transient output history is intentionally excluded. */
+function stateKey(state: GameState): string {
+  return stableStringify({
+    cursor: state.cursor,
+    vars: state.vars,
+    rng: state.rng,
+    stage: state.stage,
+    audio: {
+      music: state.audio.music && { asset: state.audio.music.asset, loop: state.audio.music.loop },
+      voice: state.audio.voice && { asset: state.audio.voice.asset, loop: state.audio.voice.loop },
+    },
+    pending: state.pending,
+    done: state.done,
+  });
+}
+
+/** A non-observable statement that pauses resolver execution at every node entry. */
+const entryMarker = { op: "say" as const, who: "", text: "" };
+
+function withEntryMarkers(story: Story): Story {
+  return {
+    ...story,
+    nodes: story.nodes.map((node) => ({ ...node, body: [entryMarker, ...node.body] })),
+  };
+}
+
+/**
+ * Advance only synthetic entry markers, exposing the nodes the normal reducer resolves through
+ * without duplicating its control-flow or condition semantics.
+ */
+function consumeEntryMarkers(story: Story, state: GameState): { state: GameState; entered: string[] } {
+  const entered: string[] = [];
+  let current = state;
+  while (!current.done && current.pending.kind === "say" && current.cursor.index === 0) {
+    entered.push(current.cursor.node);
+    current = reducer(story, current, { type: "ADVANCE" });
+  }
+  return { state: current, entered };
+}
+
+interface ExplorationState {
+  state: GameState;
+  markerState: GameState;
+  entered: string[];
+}
+
 /**
  * Deterministic, bounded breadth-first exploration of every reachable game state — the
  * behavioural counterpart to the static `graph` analysis. Where `graph` walks edges ignoring
@@ -42,11 +89,14 @@ function actionsFor(state: GameState): Action[] {
  * whether an ending is actually reachable, and choices that gate themselves off entirely.
  *
  * Termination is guaranteed: states are deduplicated by their canonical snapshot, and a
- * `maxStates` cap (default 5000) bounds pathological fan-out (e.g. a counter incremented in a
- * loop) — hitting it sets `truncated`. Pure; same story + seed ⇒ identical report.
+ * `maxStates` cap (default 5000) bounds every unique state as it is scheduled, so arbitrary
+ * choice fan-out cannot grow the queue beyond the cap. Pure; same story + seed ⇒ identical report.
  */
 export function exploreStory(story: Story, opts: { seed?: number; maxStates?: number } = {}): ExploreReport {
   const maxStates = opts.maxStates ?? 5000;
+  if (!Number.isSafeInteger(maxStates) || maxStates < 0) {
+    throw new RangeError("maxStates must be a non-negative safe integer");
+  }
   const visited = new Set<string>();
   const reached = new Set<string>();
   const stuck = new Set<string>();
@@ -56,31 +106,32 @@ export function exploreStory(story: Story, opts: { seed?: number; maxStates?: nu
 
   const sorted = (s: Set<string>): string[] => [...s].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 
+  const markerStory = withEntryMarkers(story);
   let start: GameState;
+  let markerStart: GameState;
   try {
     start = initialState(story, opts.seed);
+    markerStart = initialState(markerStory, opts.seed);
   } catch {
     // The opening run-up itself looped (a jump cycle before any blocking statement).
     return { reached: [], endReachable: false, stuck: [], truncated: false, crashed: true };
   }
-  const queue: GameState[] = [start];
+  if (maxStates <= 0) {
+    return { reached: [], endReachable: false, stuck: [], truncated: true, crashed: false };
+  }
+  const initialEntries = consumeEntryMarkers(markerStory, markerStart);
+  const scheduled = new Set<string>([stateKey(start)]);
+  const queue: ExplorationState[] = [
+    { state: start, markerState: initialEntries.state, entered: initialEntries.entered },
+  ];
 
   while (queue.length > 0) {
-    const state = queue.shift()!;
-    const key = stableStringify({
-      cursor: state.cursor,
-      vars: state.vars,
-      rng: state.rng,
-      stage: state.stage,
-      pending: state.pending,
-      done: state.done,
-    });
+    const current = queue.shift()!;
+    const { state } = current;
+    const key = stateKey(state);
     if (visited.has(key)) continue;
-    if (visited.size >= maxStates) {
-      truncated = true;
-      break;
-    }
     visited.add(key);
+    for (const node of current.entered) reached.add(node);
     reached.add(state.cursor.node);
 
     if (state.done) {
@@ -95,7 +146,21 @@ export function exploreStory(story: Story, opts: { seed?: number; maxStates?: nu
     }
     for (const action of actions) {
       try {
-        queue.push(reducer(story, state, action));
+        const next = reducer(story, state, action);
+        const nextKey = stateKey(next);
+        const alreadyScheduled = scheduled.has(nextKey);
+        if (!alreadyScheduled && scheduled.size >= maxStates) {
+          truncated = true;
+          continue;
+        }
+        const markerNext = consumeEntryMarkers(
+          markerStory,
+          reducer(markerStory, current.markerState, action),
+        );
+        for (const node of markerNext.entered) reached.add(node);
+        if (alreadyScheduled) continue;
+        scheduled.add(nextKey);
+        queue.push({ state: next, markerState: markerNext.state, entered: markerNext.entered });
       } catch {
         // This transition looped past the statement budget — record it and stop down this path.
         crashed = true;

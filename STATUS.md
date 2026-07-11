@@ -1,6 +1,6 @@
 # Ludelier — Project Status & Handoff
 
-_Last updated: 2026-07-03_
+_Last updated: 2026-07-10_
 
 A living snapshot of where the project stands: decisions, what's built, what's open, and the roadmap. For day-to-day conventions and the golden rules, see [AGENTS.md](./AGENTS.md). This file is the "where are we" overview.
 
@@ -27,8 +27,8 @@ A living snapshot of where the project stands: decisions, what's built, what's o
 | Architecture | 3-layer: pure **logic** (seeded RNG injected, no `Math.random`) / **state** (Redux-style action dispatch + JSONL trace) / **renderer** (display only). `Simulation` = headless runner. Determinism rule: sort by stable id before order-sensitive iteration |
 | Testing | **Vitest** (pure logic, no browser) + **Playwright** (E2E/visual, SwiftShader, `data-ready` flag) |
 | Build / PWA | **Vite** + **vite-plugin-pwa** (Workbox) + **Dexie** (IndexedDB) saves → Dexie Cloud addon = drop-in cloud-sync upsell |
-| Audio | **Howler.js** — deferred to P3 (no assets yet) |
-| Assets (v1) | **Multi-provider** behind an `AssetProvider` interface — **OpenAI + OpenRouter** from the start, **BYOK per provider**, capability-routed (transparency → a provider that supports it, e.g. OpenAI `gpt-image-1.5`). fal.ai / ElevenLabs are later drop-ins via a provider registry. Provenance sidecars `{provider,model,prompt,seed,params,cost,hash}` + hash-cache |
+| Audio | **Howler.js** browser presentation adapters — deterministic engine cue state, generated-voice disclosure, and no renderer/engine dependency |
+| Assets (v1) | **Multi-provider** model-targeted `AssetProvider` — OpenAI image/TTS + OpenRouter images, BYOK per provider, validated capability routing, private redacted provenance (`promptHash`, never plaintext prompts/secrets/raw responses), and verified hash cache. fal.ai / ElevenLabs are later adapters |
 | AI authoring (P2) | **Multi-provider `LLMProvider`** (OpenAI + OpenRouter, shared OpenAI-compatible core, BYOK per provider) + `generateStory()` self-correction loop; evolving into a **world API** (understand + manipulate tasks over the Story) exposed as LLM tools for the editor's agentic chat |
 | App shape | **Agent-native editor**: game-engine-style editor + built-in agentic chat; world API drives both the chat and the UI (parity). Play mode = the runtime-web PWA player |
 | Versioning | **changesets**, independent per-package, **version-PR only (no npm publish yet)** |
@@ -54,6 +54,9 @@ packages/
   world/          @ludelier/world  — agent world API: task registry + describe(), understand/manipulate tasks, applyEdit, EditLog
   cli/            @ludelier/cli    — validate | simulate | replay | world … | author run | mcp (the agent harness)
   authoring/      @ludelier/authoring — P2: LLMProvider (+tool-calling, retry/backoff) + generateStory() loop + worldTools/dispatch + runAgent
+  assets/         @ludelier/assets — portable provider targets, resolution, redacted provenance, canonical hashes
+  assets-node/    @ludelier/assets-node — Node-only processing, controlled persistence, verified cache/recovery
+  audio-web/      @ludelier/audio-web — browser-only Howler presentation adapter
   editor-core/    @ludelier/editor-core — headless EditorSession (the parity façade; owns the EditLog + agent chat)
   editor-web/     @ludelier/editor-web  — React editor: story map + script lens + play preview + edit forms + agent chat
   renderer-pixi/  @ludelier/renderer-pixi — PixiJS v8 display-only renderer (dialog resolves character name/color)
@@ -102,7 +105,7 @@ just changeset / just version
 - **CI** (`ci.yml`): typecheck + unit + build + e2e.
 - `cafe.story.json` plays end-to-end in a real browser **with a café background + character sprite** (AI-generated via the OpenAI Images API; see the `image-generation` agent skill).
 
-### P2 — AI authoring + agent world API 🔨 (in progress)
+### P2 — AI authoring + agent world API ✅ (complete)
 - **`@ludelier/authoring`** (first slice) — `LLMProvider` seam mirroring `AssetProvider` (OpenAI + OpenRouter over a shared OpenAI-compatible core; BYOK-per-provider registry) + `generateStory()`: a provider-agnostic **self-correction loop** that constrains output with `storyJsonSchema()`, validates with `validateStory()`, and feeds issues back until valid or attempts exhausted. Hermetic mock-provider / fake-fetch tests.
 - **World API & agent harness — slice 1 ✅ (2026-06-21):** new pure **`@ludelier/world`** package — self-describing task registry (`describe()` manifest derives CLI subcommands + LLM tools), 9 understand tasks + a 12-command flattened manipulate spine through an always-valid `applyEdit` (validateStory + world-local `say.who` check), event-sourced `EditLog` (linear-history undo/redo, contiguous-tail `revertRun`, JSONL replay), `{success}` envelope, canonical `hashStory`. `@ludelier/authoring` gained provider tool-calling + a `worldTools`/`dispatch` adapter + the autonomous `runAgent` loop (self-verify, partial-run aware, hermetic via scripted provider). `@ludelier/cli` gained registry-derived `world …` subcommands + `author run` (entrypoint refactored to a testable `run(argv)`). 60 unit tests across world/authoring/cli; `just check` green. Plan: `docs/plans/2026-06-19-001-feat-world-api-agent-harness-plan.md` (deepened + reviewed; units U1–U12).
 - **Live-LLM smoke test ✅ (2026-06-21):** `cli author run` exercised end-to-end against **OpenRouter + `openai/gpt-5-mini`** (BYOK) — live provider tool-calling drives the full `runAgent` loop, edits stay Zod-valid, provider tool-calling variance is not a blocker. The default slug `openai/gpt-5-mini` is verified present + tool-capable on OpenRouter.
@@ -123,7 +126,9 @@ just changeset / just version
   - **Infra:** MIT `LICENSE` (was missing!); CI now builds editor-web (previously `.tsx` was never typechecked in CI) and gates **Biome** lint/format (`just lint`) + `just fmt-check`; `.gitignore` covers `.env`; `CONTRIBUTING.md`; README rewritten (it still claimed "P0 — no rendering yet").
 - **Follow-up round ✅ (2026-07-03, same day):** `add/update/remove-choice-option` world ops (manifest 21 → 24; CLI/LLM/MCP/forms pick them up with zero further code); a 6-test Playwright smoke suite for the editor (`editor` e2e project, port 5180); play position survives edits (the preview replays its own recorded actions); per-run **Revert** in the History panel (runs grouped; the contiguous-tail run is actionable); a React error boundary; opt-in "remember key"; renderer HiDPI (`resolution` defaults to `devicePixelRatio`; visual baseline unchanged) + first renderer unit tests (pure display math in `layout.ts`); player keyboard input (Enter/Space/1–9 through the reducer's own guards) + a polite `aria-live` transcript line; `just coverage` + CI Playwright browser caching.
 - **Polish round ✅ (2026-07-04):** responsive editor layout (center-first stacking at 1280/820px, browser-verified) + story map keyed by session swap (Open/New re-frames; edits keep the viewport; fit-on-demand via the map controls); the agent gate gained a **non-blocking warnings channel** — newly-introduced statically-reachable-but-runtime-unreached nodes ride along on an accepted `done` (`{ok:true, warnings}`) and in the editor feed (closes the last `architecture-risks.md` open follow-up); a seeded **fuzz harness** over `applyEdit` (2×400 random commands incl. undo/redo interleave — always-valid after every apply, export/import refolds identically).
-- **Next:** editor component tests; live viewport resize; save slots / backlog / text-speed UI.
+- **Graph-centric editor layout ✅ (2026-07-07):** the editor shell was redesigned around the story graph — a large central React Flow canvas flanked by a collapsible agent-chat dock (left) and a tabbed inspector (right; Node / Edit / Health / History), with drag-to-resize splitters whose sizes persist across reloads (`react-resizable-panels`) and a slim activity rail to toggle either dock. The inspector scrolls internally, so selecting a node no longer reflows the graph or the chat (the long-standing "windows jump around when you click a node" behaviour is gone; the graph gets far more room). The Pixi play preview became **on-demand**: a Play control opens it as a modal overlay (Escape / backdrop / Close), and it can **pop out into a separate window** for multi-monitor use while staying in sync with edits.
+- **Runtime-coverage surfacing + editor component tests ✅ (2026-07-10) — P2's last two open items:** the editor **Health** tab now surfaces the bounded all-paths `explore` report (the world's `explore` task / engine `exploreStory`) beside the static `graph`, giving the human editor parity with what the agent's `done` gate verifies — played-through node count, the **static-vs-runtime divergence** (statically wired but never played, warning-grade), whether an ending is actually reachable, self-gated `stuck` nodes, plus `crashed` / `truncated` notices. Added as `EditorSnapshot.explore` (computed via the same `query("explore")` the agent uses; memoized per edit); `HealthPanel` extracted to a pure, prop-driven component with matching `unhealthy`-dot severity. And a **jsdom + React Testing Library** component-test harness (`.test.tsx`, per-file `@vitest-environment jsdom`, automatic-JSX esbuild) covering `HealthPanel`, the manifest-driven `TaskForm`, and the `ScriptLens`. `pnpm test` 234 → **287/287** across 34 files.
+- **P3 — multi-provider assets, provenance, and deterministic audio ✅ (2026-07-10):** added portable OpenAI image/TTS + OpenRouter image targets with capability resolution, safe retry semantics, redacted provenance, and verified cache identity; Node-only processing/persistence uses controlled paths, reservations, recovery-safe replacement, and private sidecars. Schema/world/engine now carry typed media metadata and deterministic `sound` / `stop-sound` cues. CLI/MCP/editor support authorized generation and redacted inventory, while the editor shares its transaction path with the agent and browser dev persistence preflights/reserves before paid dispatch. Runtime/editor Howler adapters reconcile desired audio, suppress stale cues, disclose generated voice, and retain image-only Pixi preload.
 
 ### Tooling ✅
 - changesets (independent, version-PR only); `release.yml` + `changeset-check.yml`.
@@ -132,13 +137,14 @@ just changeset / just version
 
 ---
 
-## 7. Verification status (as of last run, 2026-07-03)
+## 7. Verification status (full P3 CI re-run 2026-07-10)
 
 - `pnpm typecheck` — clean (tsc strict).
-- `pnpm lint` — clean (Biome, lint + format).
-- `pnpm test` — 234/234 unit tests pass across 28 files (schema/engine/world/authoring/cli incl. MCP/editor-core/editor-web forms+files).
-- `pnpm build:web` + `pnpm build:editor` — OK (both also gate CI).
-- `just e2e` — 3/3 pass (opening frame renders the café bg + sprite + **named** speaker; baseline regenerated for the name/color fix).
+- `pnpm lint` — clean (Biome, lint + format; configuration emits its existing deprecation notice).
+- `pnpm test` — **430/430** unit/component tests pass across **48** files, including provider, persistence, replay, agent/MCP, editor, and audio regression coverage.
+- `pnpm build:web` + `pnpm build:editor` — OK (both gate CI).
+- `just e2e` — **20/20** Playwright tests pass across runtime and editor projects.
+- **Manual BYOK smoke** — passed in isolated temporary roots: one OpenAI opaque image, one OpenAI TTS response, and one configured OpenRouter image target; all persisted assets were redacted-inventory `valid` and the resulting Story validated.
 
 ---
 
@@ -148,18 +154,19 @@ just changeset / just version
 |---|---|---|
 | **P0** headless core | ✅ done | engine + schema + CLI harness + Vitest |
 | **P1** render + play | ✅ done | PixiJS renderer, Vite/PWA shell, Dexie saves, Playwright, **backgrounds + character sprites** (scene/show/hide + crossfades) |
-| **P2** AI authoring + world API | 🔨 in progress | multi-provider LLM adapter (OpenAI + OpenRouter) + self-correction loop **[done]**; understand/manipulate world API + registry + agent loop + CLI surface **[done, slice 1]**; editor agentic chat (next) |
-| **P3** AI assets | ⬜ | image/TTS gen behind a **multi-provider `AssetProvider`** (OpenAI + OpenRouter v1, BYOK per provider, capability-routed), provenance pipeline, Howler audio |
+| **P2** AI authoring + world API | ✅ done | multi-provider LLM adapter (OpenAI + OpenRouter) + self-correction loop; understand/manipulate world API + registry + agent loop + CLI + **MCP**; React editor + **agentic chat**; manifest-driven edit forms; graph-centric layout; static **+ runtime** health surfacing; unit + component + e2e tests |
+| **P3** AI assets | ✅ done | OpenAI image/TTS + OpenRouter images, model-targeted capability routing, redacted provenance + verified cache/persistence, CLI/MCP/editor/agent generation parity, deterministic audio + Howler presentation; live BYOK smoke passed |
 | **P4** cloud seam | ⬜ | self-host BYOK config ↔ metered cloud per-tenant keys (gateway tool not yet chosen) |
 
 ---
 
 ## 9. Open tasks / TODO
 
-- **P2 remaining:** editor component tests; bounded `simulate` all-paths surfacing. (Choice-option ops, the editor Playwright smoke, play-position preservation, and per-run History revert all landed 2026-07-03 — see §6.)
-- **Presentation debt** (from the 2026-07-03 review, tracked in `docs/plans/2026-07-03-001-repo-review-implementation.md` "not in scope"): live viewport resize (beyond DPI), save slots / backlog / text-speed UI, responsive editor layout, map viewport persistence. (Renderer unit tests, DPI, keyboard + ARIA floor, error boundary, and remember-key landed 2026-07-03.)
+- **P2 — COMPLETE (2026-07-10).** The last two items — editor component tests and bounded all-paths (`explore`) surfacing in the editor — landed 2026-07-10 (see §6). (Choice-option ops, the editor Playwright smoke, play-position preservation, per-run History revert landed 2026-07-03; the graph-centric layout 2026-07-07.)
+- **P3 — COMPLETE (2026-07-10).** Multi-provider image/TTS generation, private redacted provenance, controlled host persistence/recovery, authorized CLI/MCP/editor/agent workflows, deterministic audio presentation, and the documented manual BYOK smoke all passed; the detailed execution record is `docs/plans/2026-07-10-001-p3-ai-assets-plan.md`.
+- **Presentation debt** (from the 2026-07-03 review, tracked in `docs/plans/2026-07-03-001-repo-review-implementation.md` "not in scope") — still open: live viewport resize (beyond DPI), save slots / backlog / text-speed UI. (Renderer unit tests, DPI, keyboard + ARIA floor, error boundary, remember-key landed 2026-07-03; **responsive layout + map-viewport persistence landed 2026-07-04**, superseded by the **graph-centric layout 2026-07-07**.)
 - **Transitions** are a renderer-side crossfade only (instant data model; hash-neutral). Future polish: per-statement transition hints, named/custom sprite positions, sprite layering effects.
-- Merge the open **Version Packages** PR (bumps 7 packages to `0.2.0`, renderer/runtime to `0.1.1`; the 2026-07-03 review changesets will roll into the next one). Requires the repo setting "Allow GitHub Actions to create and approve pull requests" (still pending — §13).
+- **Version Packages PR merged (`9f20dd0`) — all 9 packages now at `0.2.0`.** The 2026-07-03/07 review + this P2-close work will roll into the next Version PR (needs a changeset; see §5).
 - Switch changelog generator to `@changesets/changelog-github` once ready.
 - Live-provider smoke test in CI (needs a secrets story); transcript/`raw` redaction before persisting provenance; coverage reporting; Playwright browser caching in CI.
 - Move working directory `gaimez` → `ludelier` (deferred; user does between sessions).
@@ -169,14 +176,14 @@ just changeset / just version
 ## 10. Open questions / deferred decisions
 
 - **P4 AI gateway tool** — NOT chosen. LiteLLM is a research candidate but explicitly deferred. Concept is locked (self-host BYOK config ↔ cloud metered per-tenant keys → usage billing; metering boundary = per-tenant key; monetize workflow + hosting, never the copyable artifact). Decide later.
-- **Asset providers beyond OpenRouter** — fal.ai (FLUX/LoRA) + ElevenLabs (voice/SFX) are the planned adapters; timing TBD (likely P3).
-- **Transparent sprites — RESOLVED (2026-06-18, see §2):** `AssetProvider` is **multi-provider**, so transparency is a routing decision, not a gap. OpenAI (`gpt-image-1.5`/`gpt-image-1`) supplies native transparency; OpenRouter covers everything else (and Sourceful riverflow-v2.5 if transparency is wanted on that path). The resolver routes a transparent request to a capable configured provider — no single-provider lock, no keying fallback needed when OpenAI is configured.
+- **Asset providers beyond OpenRouter** — fal.ai (FLUX/LoRA) + ElevenLabs (voice/SFX) are planned later adapters; no delivery phase is committed.
+- **Transparent sprites — RESOLVED:** resolution is model-targeted, not provider-wide. A transparent request succeeds only when its selected configured target explicitly advertises compatible alpha/background and output-format support; no opaque/deprecated fallback is implicit.
 - **Editor app shell — RESOLVED (2026-06-22): React.** The editor chrome (panels/inspectors + chat) around the Pixi canvas uses React (largest ecosystem + most AI-codegen training data, aligning with the agent-grows-the-app goal) in a new `@ludelier/editor-web` (Vite + React) package binding to `@ludelier/editor-core`. The runtime-web player stays the embedded play mode.
 - **Agent tool-calling** — extend `LLMProvider` with function/tool-calling (OpenAI-compatible `tools`/`tool_calls`) so the agentic chat invokes world-API tasks; define the tool schemas + the agent loop (where it runs — client-side BYOK first).
 - ~~**World-API home**~~ — RESOLVED: split into `@ludelier/world` (task registry + EditLog) and `@ludelier/editor-core` (the `EditorSession` façade); `authoring` keeps only the LLM provider + agent loop.
 - **Default model slugs** — `providersFromEnv()` defaults (`gpt-5-mini`, `openai/gpt-5-mini`) are unverified placeholders; confirm current slugs at the live smoke test.
 - **Author-facing DSL** — a simpler Ren'Py-like surface that compiles down to the canonical JSON; design later.
-- **Character/style consistency** strategy for AI art (per-character LoRA vs. model-native multi-subject like Nano Banana Pro) — revisit at P3.
+- **Character/style consistency** strategy for AI art (per-character LoRA vs. model-native multi-subject like Nano Banana Pro) — deferred for a future content/asset iteration.
 
 ---
 
@@ -212,7 +219,7 @@ bcafd0e chore: add justfile task runner; document as canonical entrypoint in AGE
 73938ea test(e2e): cover advance + choice via real canvas clicks
 ```
 
-- All packages at `0.1.0` (pre-release, `private: true`); an open Version PR (`changeset-release/main`) holds the next round of bumps (7 packages → `0.2.0`, renderer/runtime → `0.1.1`), with the 2026-07-03 review changesets queued after it.
+- All 9 packages now at `0.2.0` (pre-release, `private: true`) — the Version PR was merged (`9f20dd0 chore(release): version packages to 0.2.0`). Pending changesets since accumulate for the next round.
 
 ---
 

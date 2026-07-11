@@ -123,4 +123,119 @@ describe("exploreStory", () => {
     expect(r.endReachable).toBe(true);
     expect(r.reached).toEqual(["a", "b"]);
   });
+
+  it("keeps high-fan-out duplicate successors within the state cap without hiding a later unique state", () => {
+    const duplicateOptions = Array.from({ length: 10_000 }, (_, index) => ({
+      label: `duplicate-${index}`,
+      goto: index === 9_999 ? "second" : "end",
+    }));
+    const story = build({
+      meta: { id: "fan-out", title: "Fan-out", start: "a" },
+      nodes: [
+        { id: "a", body: [{ op: "choice", options: duplicateOptions }] },
+        { id: "end", body: [{ op: "end" }] },
+        { id: "second", body: [{ op: "end" }] },
+      ],
+    });
+
+    expect(exploreStory(story, { maxStates: 3 })).toEqual({
+      reached: ["a", "end", "second"],
+      endReachable: true,
+      stuck: [],
+      truncated: false,
+      crashed: false,
+    });
+    expect(exploreStory(story, { maxStates: 2 })).toEqual({
+      reached: ["a", "end"],
+      endReachable: true,
+      stuck: [],
+      truncated: true,
+      crashed: false,
+    });
+  });
+
+  it("rejects non-finite or unsafe maxStates values", () => {
+    const story = build({
+      meta: { id: "cap", title: "Cap", start: "a" },
+      nodes: [{ id: "a", body: [{ op: "end" }] }],
+    });
+
+    for (const maxStates of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      -1,
+      1.5,
+      2 ** 53,
+    ]) {
+      expect(() => exploreStory(story, { maxStates })).toThrow(/maxStates/);
+    }
+    expect(exploreStory(story, { maxStates: 0 })).toEqual({
+      reached: [],
+      endReachable: false,
+      stuck: [],
+      truncated: true,
+      crashed: false,
+    });
+  });
+
+  it("reports nodes passed through by nonblocking resolution", () => {
+    const story = build({
+      meta: { id: "pass-through", title: "Pass through", start: "a" },
+      characters: [{ id: "n", name: "N" }],
+      nodes: [
+        {
+          id: "a",
+          body: [
+            { op: "set", var: "visitedA", value: true },
+            { op: "jump", goto: "b" },
+          ],
+        },
+        { id: "b", body: [{ op: "say", who: "n", text: "Arrived." }, { op: "end" }] },
+      ],
+    });
+
+    const report = exploreStory(story);
+    expect(report).toEqual({
+      reached: ["a", "b"],
+      endReachable: true,
+      stuck: [],
+      truncated: false,
+      crashed: false,
+    });
+    expect(exploreStory(story)).toEqual(report);
+  });
+
+  it("reports pass-through nodes on every converging transition regardless of choice order", () => {
+    const directOptions = [
+      { label: "direct", goto: "target" },
+      { label: "via", goto: "mid" },
+    ];
+    const reversedOptions = [...directOptions].reverse();
+    const passThroughNodes = [
+      { id: "mid", body: [{ op: "jump" as const, goto: "target" }] },
+      { id: "target", body: [{ op: "end" as const }] },
+    ];
+    const directFirst = exploreStory(
+      build({
+        meta: { id: "converging", title: "Converging", start: "a" },
+        nodes: [{ id: "a", body: [{ op: "choice", options: directOptions }] }, ...passThroughNodes],
+      }),
+    );
+    expect(directFirst).toEqual({
+      reached: ["a", "mid", "target"],
+      endReachable: true,
+      stuck: [],
+      truncated: false,
+      crashed: false,
+    });
+    expect(
+      exploreStory(
+        build({
+          meta: { id: "converging", title: "Converging", start: "a" },
+          nodes: [{ id: "a", body: [{ op: "choice", options: reversedOptions }] }, ...passThroughNodes],
+        }),
+      ),
+    ).toEqual(directFirst);
+  });
 });

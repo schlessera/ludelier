@@ -12,7 +12,7 @@ import {
 } from "@ludelier/world";
 import type { Issue, Story } from "@ludelier/schema";
 import type { ChatMessage, CompletionResult, LLMProvider, ToolCall, ToolDefinition } from "./provider";
-import { worldTools, dispatch } from "./tools";
+import { worldTools, dispatch, runHostTool, type AgentTool, type AgentToolEffect } from "./tools";
 
 export interface RunAgentOptions {
   provider: LLMProvider;
@@ -22,6 +22,11 @@ export interface RunAgentOptions {
   story: Story;
   /** A world registry; defaults to a fresh `createWorld()`. */
   world?: Registry;
+  /**
+   * Host-owned tools composed with the world manifest for this run. Hosts own authorization and
+   * external I/O; story changes must use the supplied edit log from the tool handler context.
+   */
+  tools?: readonly AgentTool[];
   /**
    * An existing edit log to append this run onto (e.g. an editor session's history) so the
    * run's records join that history and stay undoable. Defaults to a fresh log over `story`.
@@ -69,6 +74,8 @@ export type AgentEvent =
   | { kind: "assistant"; text: string }
   | { kind: "edit"; command: string; params: unknown; success: boolean; issues: Issue[] }
   | { kind: "query"; task: string; success: boolean }
+  /** Compact host-tool progress: never includes unbounded call arguments or tool results. */
+  | { kind: "host-tool"; name: string; effects: readonly AgentToolEffect[]; success: boolean }
   | { kind: "verify"; clean: boolean; problems: string[]; warnings?: string[] }
   | { kind: "stop"; reason: StopReason };
 
@@ -89,12 +96,18 @@ export interface Verification {
   endReachable: boolean;
   /** Whether playing the story throws (infinite jump loop) — caught, not propagated. */
   crashed: boolean;
-  /** Statically reachable nodes no runtime play-through ever visits (every path to them is
-   *  gated off by conditions). Not a hard error — a WIP branch legitimately looks like this —
-   *  but worth telling the author/agent about (surfaced as a gate warning, non-blocking). */
+  /**
+   * Whether the condition-honouring exploration hit its state cap. Its `reached` and
+   * `endReachable` values are lower bounds while true, so derived absence claims are suppressed.
+   */
+  truncated: boolean;
+  /** Statically reachable nodes no COMPLETE runtime play-through visits. This is intentionally
+   * empty while exploration is truncated, because an unvisited node may simply be beyond its cap.
+   * It is not a hard error — a WIP branch legitimately looks like this — but worth telling the
+   * author/agent about (surfaced as a gate warning, non-blocking). */
   runtimeUnreached: string[];
-  /** `reached` is real behavioural coverage (every explored path), not just the linear head;
-   *  `hash` is the seeded linear-run fingerprint (a determinism probe). */
+  /** `reached` is real behavioural coverage (every explored path), not just the linear head; it
+   * is a lower bound when `truncated` is true. `hash` is the seeded linear-run fingerprint. */
   simulate: { hash: string; reached: string[] } | null;
 }
 
@@ -188,11 +201,31 @@ const DONE_TOOL: ToolDefinition = {
   parameters: { type: "object", properties: {}, additionalProperties: false },
 };
 
-function agentSystemPrompt(world: Registry): string {
+/** Compose only unambiguous provider tool definitions, before the provider is ever invoked. */
+function composeTools(world: Registry, hostTools: readonly AgentTool[]): ToolDefinition[] {
+  const worldNames = new Set(world.describe().map((task) => task.name));
+  if (worldNames.has(DONE_TOOL.name)) {
+    throw new Error(`world task "${DONE_TOOL.name}" conflicts with the reserved done tool`);
+  }
+
+  const hostNames = new Set<string>();
+  for (const tool of hostTools) {
+    const { name } = tool.definition;
+    if (name === DONE_TOOL.name) throw new Error(`host tool "${name}" conflicts with the reserved done tool`);
+    if (worldNames.has(name)) throw new Error(`host tool "${name}" conflicts with world task "${name}"`);
+    if (hostNames.has(name)) throw new Error(`duplicate host tool "${name}"`);
+    hostNames.add(name);
+  }
+
+  return [...worldTools(world), ...hostTools.map((tool) => tool.definition), DONE_TOOL];
+}
+
+function agentSystemPrompt(world: Registry, hostTools: readonly AgentTool[]): string {
   const names = world
     .describe()
     .map((t) => `${t.name} (${t.kind})`)
     .join(", ");
+  const hostNames = hostTools.map((tool) => tool.definition.name).join(", ");
   return [
     "You are an editing agent for the Ludelier visual-novel engine.",
     "Use the provided tools to inspect and edit the story. Every edit is validated;",
@@ -230,6 +263,7 @@ function agentSystemPrompt(world: Registry): string {
     "choice that reads a variable nothing ever sets, it is rejected with the problems listed — fix them",
     "and call `done` again.",
     `Available world tasks: ${names}.`,
+    ...(hostNames ? [`Available host tools: ${hostNames}.`] : []),
   ].join("\n");
 }
 
@@ -276,12 +310,13 @@ function verify(world: Registry, story: Story): Verification {
   } catch {
     sim = null; // the story loops at runtime — explore.crashed already captures it
   }
-  // Statically reachable but never visited by the condition-honouring walk: every path in
-  // is gated off. Only meaningful when both analyses ran (else report nothing, not noise).
+  // Statically reachable but never visited by COMPLETE condition-honouring exploration: every
+  // path in is gated off. A truncated `reached` set is only a lower bound, so it must never
+  // produce false absence warnings.
   const runtimeReached = new Set(explore?.reached ?? []);
   const staticallyUnreachable = new Set(graph?.unreachable ?? []);
   const runtimeUnreached =
-    graph && explore && !explore.crashed
+    graph && explore && !explore.crashed && !explore.truncated
       ? story.nodes.map((n) => n.id).filter((id) => !staticallyUnreachable.has(id) && !runtimeReached.has(id))
       : [];
   return {
@@ -294,6 +329,7 @@ function verify(world: Registry, story: Story): Verification {
     stuck: explore?.stuck ?? [],
     endReachable: explore?.endReachable ?? false,
     crashed: explore?.crashed ?? false,
+    truncated: explore?.truncated ?? false,
     runtimeUnreached,
     simulate: sim ? { hash: sim.hash, reached: explore?.reached ?? sim.reached } : null,
   };
@@ -311,7 +347,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   const hardCap = opts.maxSteps; // optional absolute bound (no default)
   const checkpointEvery = opts.checkpointEvery ?? 500;
   const emit = opts.onEvent ?? ((): void => {});
-  const tools = [...worldTools(world), DONE_TOOL];
+  const hostTools = opts.tools ?? [];
+  const tools = composeTools(world, hostTools);
+  const hostToolsByName = new Map(hostTools.map((tool) => [tool.definition.name, tool]));
 
   // Measure against the log's current story (== opts.story for a fresh log) so an injected
   // session log diffs/verifies relative to the pre-run state, not the log's original base.
@@ -321,7 +359,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   const gateNow = (): Gate => describeGate(baseline, verify(world, log.currentStory()));
 
   const transcript: ChatMessage[] = [
-    { role: "system", content: opts.system ?? agentSystemPrompt(world) },
+    { role: "system", content: opts.system ?? agentSystemPrompt(world, hostTools) },
     { role: "user", content: opts.prompt },
   ];
 
@@ -434,6 +472,26 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
         }
         continue;
       }
+      const hostTool = hostToolsByName.get(c.name);
+      if (hostTool) {
+        const result = await runHostTool(hostTool, {
+          call: c,
+          story: log.currentStory(),
+          world,
+          log,
+          runId,
+          signal: opts.signal,
+        });
+        transcript.push({ role: "tool", content: JSON.stringify(result), toolCallId: c.id });
+        emit({
+          kind: "host-tool",
+          name: hostTool.definition.name,
+          effects: hostTool.effects,
+          success: result.success,
+        });
+        continue;
+      }
+
       const result = dispatch(world, log, runId, c);
       transcript.push({ role: "tool", content: JSON.stringify(result), toolCallId: c.id });
       if (world.get(c.name)?.kind === "understand") {

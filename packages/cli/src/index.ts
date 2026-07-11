@@ -1,11 +1,19 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { validateStory, type Issue, type Story } from "@ludelier/schema";
 import { Simulation, replayTrace, type Action } from "@ludelier/engine";
 import { createWorld, EditLog, importLog, parseParams, type Registry, type Result } from "@ludelier/world";
 import { runAgent, providersFromEnv } from "@ludelier/authoring";
-import { serveMcp } from "./mcp";
+import type { AssetGenerationRequest } from "@ludelier/assets";
+import {
+  createAssetHostFromEnvironment,
+  createAssetInventoryHost,
+  defaultAssetStoreRoots,
+  hasConfiguredAssetProvider,
+} from "./assets";
+import { createPersister, serveMcp } from "./mcp";
 
 /** A CLI failure carrying the process exit code to return (no process.exit in run()). */
 class CliError extends Error {
@@ -193,6 +201,81 @@ async function runAuthor(rest: string[]): Promise<number> {
   return res.ok ? 0 : 1;
 }
 
+/** `asset <gen|ls>` — controlled media generation and redacted inventory; `--force` only regenerates a verified cache hit and may charge. */
+async function runAsset(rest: string[]): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args: rest,
+    options: {
+      story: { type: "string" },
+      id: { type: "string" },
+      destination: { type: "string" },
+      json: { type: "string" },
+      log: { type: "string" },
+      "public-root": { type: "string" },
+      "provenance-root": { type: "string" },
+      force: { type: "boolean" },
+    },
+    allowPositionals: true,
+  });
+  const sub = positionals[0];
+  const storyPath = values.story;
+  const defaults = defaultAssetStoreRoots();
+  const roots = {
+    publicRoot: path.resolve(values["public-root"] ?? defaults.publicRoot),
+    provenanceRoot: path.resolve(values["provenance-root"] ?? defaults.provenanceRoot),
+  };
+
+  if (sub === "ls") {
+    const story = loadStory(storyPath);
+    return printResult(await createAssetInventoryHost(roots).list(story.meta.id));
+  }
+  if (sub !== "gen") {
+    throw new CliError(
+      "usage: asset <gen|ls> --story <story.json> [--public-root <dir> --provenance-root <dir>]",
+      2,
+    );
+  }
+  if (!storyPath || !values.id || !values.destination || !values.json) {
+    throw new CliError(
+      "usage: asset gen --story <story.json> --id <asset-id> --destination <relative-path> --json '<request>' [--log <log.jsonl>] [--force]",
+      2,
+    );
+  }
+
+  let request: unknown;
+  try {
+    request = JSON.parse(values.json);
+  } catch {
+    throw new CliError("asset request must be valid JSON", 2);
+  }
+  if (!hasConfiguredAssetProvider()) {
+    throw new CliError("asset gen needs a configured asset BYOK provider", 1);
+  }
+
+  const world = createWorld();
+  // The rewritten Story is authoritative on every invocation; --log is reusable output, never
+  // input to fold again after that Story already contains the records.
+  const log = new EditLog(world, loadStory(storyPath));
+  const target = { storyPath, logPath: values.log };
+  const host = await createAssetHostFromEnvironment({
+    roots,
+    persist: (activeLog) => createPersister(activeLog, target)(),
+  });
+  if (!host.hasGenerationProvider) {
+    throw new CliError("asset gen has no compatible configured provider", 1);
+  }
+  return printResult(
+    await host.generate({
+      log,
+      runId: "cli-asset",
+      id: values.id,
+      destination: values.destination,
+      request: request as AssetGenerationRequest,
+      force: values.force,
+    }),
+  );
+}
+
 /** Parse + dispatch a CLI invocation, returning the process exit code. Never calls process.exit. */
 export async function run(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
@@ -228,41 +311,72 @@ export async function run(argv: string[]): Promise<number> {
         );
         return 0;
       }
+      /** `replay <story> <trace> [--seed <number>] [--start <node-id>]` checks a recorded path. */
       case "replay": {
         const { values, positionals } = parseArgs({
           args: rest,
-          options: { seed: { type: "string" } },
+          options: { seed: { type: "string" }, start: { type: "string" } },
           allowPositionals: true,
         });
         const story = loadStory(positionals[0]);
         const trace = readFileSync(positionals[1] ?? "", "utf8");
-        const result = replayTrace(story, trace, { seed: values.seed ? Number(values.seed) : undefined });
+        const result = replayTrace(story, trace, {
+          seed: values.seed ? Number(values.seed) : undefined,
+          start: values.start,
+        });
         console.log(`OK: replay matched ${result.steps} step(s)`);
         return 0;
       }
       case "world":
         return runWorld(rest);
+      case "asset":
+        return await runAsset(rest);
       case "author":
         return await runAuthor(rest);
       case "mcp": {
         const { values, positionals } = parseArgs({
           args: rest,
-          options: { log: { type: "string" } },
+          options: {
+            log: { type: "string" },
+            "enable-asset-generation": { type: "boolean" },
+            "public-root": { type: "string" },
+            "provenance-root": { type: "string" },
+          },
           allowPositionals: true,
         });
         const storyPath = positionals[0];
-        if (!storyPath) throw new CliError("usage: mcp <story.json> [--log <log.jsonl>]", 2);
+        if (!storyPath) {
+          throw new CliError(
+            "usage: mcp <story.json> [--log <log.jsonl>] [--enable-asset-generation --public-root <dir> --provenance-root <dir>]",
+            2,
+          );
+        }
         // The story FILE is the source of truth (rewritten after every successful edit), so
         // the session log starts fresh on it — an existing --log file is output, not input.
         const world = createWorld();
-        return await serveMcp(world, new EditLog(world, loadStory(storyPath)), {
-          storyPath,
-          logPath: values.log,
+        const log = new EditLog(world, loadStory(storyPath));
+        const target = { storyPath, logPath: values.log };
+        if (!values["enable-asset-generation"]) return await serveMcp(world, log, target);
+
+        if (!hasConfiguredAssetProvider()) {
+          throw new CliError("MCP asset generation needs a configured asset BYOK provider", 1);
+        }
+        const defaults = defaultAssetStoreRoots();
+        const host = await createAssetHostFromEnvironment({
+          roots: {
+            publicRoot: path.resolve(values["public-root"] ?? defaults.publicRoot),
+            provenanceRoot: path.resolve(values["provenance-root"] ?? defaults.provenanceRoot),
+          },
+          persist: (activeLog) => createPersister(activeLog, target)(),
         });
+        if (!host.hasGenerationProvider) {
+          throw new CliError("MCP asset generation has no compatible configured provider", 1);
+        }
+        return await serveMcp(world, log, target, { assetGeneration: { enabled: true, host } });
       }
       default:
         console.error(
-          "usage: ludelier <validate|simulate|replay|world|author|mcp> … (run `ludelier world describe` for the task list)",
+          "usage: ludelier <validate|simulate|replay|world|author|asset|mcp> … (run `ludelier world describe` for the task list)",
         );
         return 2;
     }

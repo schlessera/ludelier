@@ -16,7 +16,10 @@ export const exploreTask: Task = {
   kind: "understand",
   description:
     "Run every reachable path (respecting if-conditions) and report reached nodes, whether an ending is reachable, and self-gated dead ends.",
-  params: z.object({ seed: z.number().int().optional(), maxStates: z.number().int().min(1).optional() }),
+  params: z.object({
+    seed: z.number().int().optional(),
+    maxStates: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  }),
   run: (story, params) => {
     const p = params as { seed?: number; maxStates?: number };
     const report: ExploreReport = exploreStory(story, p);

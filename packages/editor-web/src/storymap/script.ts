@@ -23,6 +23,10 @@ export function renderStatement(s: Statement): string {
       return `show ${s.sprite} = ${s.asset} @ ${s.at}`;
     case "hide":
       return `hide ${s.sprite}`;
+    case "sound":
+      return `sound ${s.channel} = ${s.asset}${s.loop ? " (loop)" : ""}`;
+    case "stop-sound":
+      return `stop sound ${s.channel}`;
     case "jump":
       return `jump → ${s.goto}`;
     case "branch":

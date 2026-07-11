@@ -61,6 +61,7 @@ describe("applyEdit — spine builds a valid story", () => {
 
   it("register-asset then add-statement show referencing it passes", () => {
     let s = expectOk(applyEdit(world, base, "register-asset", { id: "bg", src: "/bg.webp" }));
+    expect(s.assets).toEqual([{ id: "bg", src: "/bg.webp", kind: "image", generated: false }]);
     s = expectOk(
       applyEdit(world, s, "add-statement", {
         nodeId: "c",
@@ -87,6 +88,35 @@ describe("generic statement ops (add / update / move / remove)", () => {
       }),
     );
     expect(s.nodes.find((n) => n.id === "c")!.body.map((st) => st.op)).toEqual(["say", "set", "roll"]);
+  });
+
+  it("adds sound and stop-sound through the generic statement task", () => {
+    let s = expectOk(
+      applyEdit(world, base, "register-asset", {
+        id: "theme",
+        src: "/theme.ogg",
+        kind: "audio",
+        generated: true,
+      }),
+    );
+    expect(s.assets).toEqual([{ id: "theme", src: "/theme.ogg", kind: "audio", generated: true }]);
+    s = expectOk(
+      applyEdit(world, s, "add-statement", {
+        nodeId: "c",
+        statement: { op: "sound", channel: "music", asset: "theme", loop: true },
+      }),
+    );
+    s = expectOk(
+      applyEdit(world, s, "add-statement", {
+        nodeId: "c",
+        statement: { op: "stop-sound", channel: "music" },
+      }),
+    );
+    expect(s.nodes.find((node) => node.id === "c")!.body.map((statement) => statement.op)).toEqual([
+      "say",
+      "sound",
+      "stop-sound",
+    ]);
   });
 
   it("update-statement replaces a statement in place, keeping its id", () => {
