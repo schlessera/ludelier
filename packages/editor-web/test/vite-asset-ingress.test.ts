@@ -1,9 +1,11 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { Buffer } from "node:buffer";
+import { createServer as createHttpServer } from "node:http";
+import type { Server as HttpServer } from "node:http";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createServer } from "vite";
+import { createServer as createViteServer } from "vite";
 import type { ViteDevServer } from "vite";
 import { assetProvenanceFsDeny, editorAssetPersistence } from "../vite.config";
 
@@ -31,15 +33,21 @@ const preflightPayload = {
 
 interface RunningIngress {
   readonly baseUrl: string;
-  close(): Promise<void>;
 }
 
 let root: string | undefined;
-let server: ViteDevServer | undefined;
+let viteServer: ViteDevServer | undefined;
+let httpServer: HttpServer | undefined;
 
 afterEach(async () => {
-  await server?.close();
-  server = undefined;
+  if (httpServer !== undefined) {
+    await new Promise<void>((resolve, reject) => {
+      httpServer?.close((error) => (error === undefined ? resolve() : reject(error)));
+    });
+  }
+  httpServer = undefined;
+  await viteServer?.close();
+  viteServer = undefined;
   if (root !== undefined) await rm(root, { recursive: true, force: true });
   root = undefined;
 });
@@ -56,26 +64,38 @@ async function startIngress(now: () => number = Date.now): Promise<RunningIngres
     writeFile(path.join(root, "certificate.pem"), "private certificate must never be served"),
   ]);
 
-  server = await createServer({
+  viteServer = await createViteServer({
     configFile: false,
     root: path.resolve("packages/editor-web"),
     appType: "custom",
     logLevel: "silent",
     plugins: [editorAssetPersistence({ publicRoot, provenanceRoot, receiptTtlMs: 500, now })],
     server: {
+      middlewareMode: true,
       fs: {
         allow: [root],
         deny: assetProvenanceFsDeny,
       },
     },
   });
-  await server.listen();
-  const address = server.httpServer?.address();
-  if (address === null || address === undefined || typeof address === "string") {
+  httpServer = createHttpServer(viteServer.middlewares);
+  await new Promise<void>((resolve, reject) => {
+    const activeServer = httpServer;
+    if (activeServer === undefined) {
+      reject(new Error("Vite ingress did not create an HTTP server"));
+      return;
+    }
+    activeServer.once("error", reject);
+    activeServer.listen(0, "127.0.0.1", () => {
+      activeServer.off("error", reject);
+      resolve();
+    });
+  });
+  const address = httpServer.address();
+  if (address === null || typeof address === "string") {
     throw new Error("Vite ingress did not expose a TCP address");
   }
-  const baseUrl = `http://127.0.0.1:${address.port}`;
-  return { baseUrl, close: () => server?.close() ?? Promise.resolve() };
+  return { baseUrl: `http://127.0.0.1:${address.port}` };
 }
 
 async function postJson(baseUrl: string, endpoint: string, body: unknown): Promise<Response> {
