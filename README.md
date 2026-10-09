@@ -1,4 +1,4 @@
-# Ludelier
+# Ludelier (WIP)
 
 A TypeScript, web-first **engine + agent-native editor + runtime for AI-augmented game development**. Initial scope: interactive visual novels (Ren'Py-style), built so AI agents can reliably **grow and maintain** a game — with a human co-building in the same environment.
 
