@@ -85,7 +85,7 @@ Currently **version-PR only — nothing publishes to npm**. Packages are `"priva
 - **P0 ✅** headless deterministic core + Zod DSL + CLI harness
 - **P1 ✅** PixiJS renderer, PWA player, saves, Playwright visual tests
 - **P2 ✅** AI authoring + the agent world API: multi-provider LLM adapter + self-correction, understand/manipulate registry, run-until-done agent loop, React editor + agentic chat, manifest-driven forms, MCP server, static + runtime health
-- **P3 🔜** AI asset generation behind a multi-provider `AssetProvider` (BYOK, capability-routed) + provenance pipeline; audio (Howler) — [technical plan](./docs/plans/2026-07-10-001-p3-ai-assets-plan.md)
-- **P4** cloud seam (BYOK self-host ↔ metered cloud) — gateway choice still open
+- **P3 ✅** Multi-provider AI generation — OpenAI image/TTS plus OpenRouter images, BYOK, and capability routing — with redacted provenance + verified persistence, authorized CLI/MCP/editor/agent workflows, and deterministic Howler audio — [technical plan](./docs/plans/2026-07-10-001-p3-ai-assets-plan.md)
+- **P4 🔜** Cloud seam (BYOK self-host ↔ metered per-tenant provider keys). The first slice is an EE-owned credential broker over existing provider seams; LiteLLM remains a deferred optional EE adapter — [architecture plan](./docs/plans/2026-07-12-001-feat-p4-cloud-seam-architecture-plan.md)
 
 License: [MIT](./LICENSE) (open core). Cloud-only features will live under `/ee` (commercial).
